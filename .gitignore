@@ -21,8 +21,20 @@
 *.la
 *.a
 *.lib
+*.map
+*.pdb
+*.idb
 
 # Executables
 *.exe
 *.out
 *.app
+
+# Other
+Debug/
+Release/
+*.aps
+*.opensdf
+*.sdf
+*.suo
+*.user
