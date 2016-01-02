@@ -43,6 +43,7 @@ Once the **Aeon profiler** dialog is running, you can use the 'Capture' item in 
 There are 3 window panes (with splitters between them) that show you timing information for the code that you are profiling.  The upper left window pane is the 'Function' list which contains all the functions that have had data collected for them.  Each time you select a function from this list, it will show the parent(s) of that function in the 'Parents' window pane in the upper right.  The Parent function(s) are functions that have called the function that you selected in the 'Function' list.  You will also see any children that the selected function calls in the 'Children' window pane in the lower right.  You can double click on a function in the 'Parents' or 'Children' views to automatically select that function in the 'Function' list (and show the parents and children of that newly selected function).  See this screenshot as an example:
 
 [![screenshot](https://github.com/botman99/AeonProfiler/raw/master/img/Viewer_PSK_Screenshot_Preview.png)](https://github.com/botman99/AeonProfiler/raw/master/img/Viewer_PSK_Screenshot.png)
+
 Each time you select a function in the 'Function' list, the source code for that function will be displayed in the window pane in the lower left.  The code for the top of that function will automatically be centered (vertically) in the source code window pane.
 
 The 'Function' view displays the following columns:
