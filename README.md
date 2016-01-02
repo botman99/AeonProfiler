@@ -12,9 +12,9 @@ Some of the unique features of the **Aeon profiler** is the ability to not only 
 
 Here's an example screenshot:
 
-[![screenshot](/img/Viewer_PSK_Screenshot_Preview.png)](/img/Viewer_PSK_Screenshot.png)
+[![screenshot](https://github.com/botman99/AeonProfiler/raw/master/img/Viewer_PSK_Screenshot_Preview.png)](https://github.com/botman99/AeonProfiler/raw/master/img/Viewer_PSK_Screenshot.png)
 
-See the [Releases](/releases) page to download the latest release.
+See the [Releases](https://github.com/botman99/AeonProfiler/releases) page to download the latest release.
 
 * Author: Jeffrey "botman" Broome
 * License: [MIT](http://opensource.org/licenses/mit-license.php)

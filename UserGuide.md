@@ -2,7 +2,7 @@
 
 ## Getting Started
 
-Start by downloading the [AeonProfiler.zip](/releases) file and unzip it somewhere that your Visual Studio solution will have access to.  You could unzip it to your solution's folder and reference the files from there within Visual Studio.
+Start by downloading the [AeonProfiler.zip](https://github.com/botman99/AeonProfiler/releases) file and unzip it somewhere that your Visual Studio solution will have access to.  You could unzip it to your solution's folder and reference the files from there within Visual Studio.
 
 You will need to include the `AeonProfiler.h` file in one of your source files (possibly in the source file that contains your `main()` or `WinMain()` function).  Like this:
 
@@ -28,7 +28,7 @@ To enable profiling, you will need to add the compiler options `/Gh /GH` to eith
 
 If you want to enable profiling for the entire project, in Visual Studio, right click on the project in the Solution Explorer and select 'Properties' then, under "Configuration Properties -> C/C++ -> Command Line" add `/Gh /GH` in the "Additional Options" box and click "OK".  Like this:
 
-(/img/ProjectCompileOptions.png)
+![options](https://github.com/botman99/AeonProfiler/raw/master/img/ProjectCompileOptions.png)
 
 If you want to enable profiling for specific source code files, in Visual Studio, right click on the source file in the Solution Explorer and select 'Properties' then, under "Configuration Properties -> C/C++ -> Command Line" add `/Gh /GH` in the "Additional Options" box and click "OK".
 
@@ -42,8 +42,7 @@ Once the **Aeon profiler** dialog is running, you can use the 'Capture' item in 
 
 There are 3 window panes (with splitters between them) that show you timing information for the code that you are profiling.  The upper left window pane is the 'Function' list which contains all the functions that have had data collected for them.  Each time you select a function from this list, it will show the parent(s) of that function in the 'Parents' window pane in the upper right.  The Parent function(s) are functions that have called the function that you selected in the 'Function' list.  You will also see any children that the selected function calls in the 'Children' window pane in the lower right.  You can double click on a function in the 'Parents' or 'Children' views to automatically select that function in the 'Function' list (and show the parents and children of that newly selected function).  See this screenshot as an example:
 
-[![screenshot](/img/Viewer_PSK_Screenshot_Preview.png)](/img/Viewer_PSK_Screenshot.png)
-
+[![screenshot](https://github.com/botman99/AeonProfiler/raw/master/img/Viewer_PSK_Screenshot_Preview.png)](https://github.com/botman99/AeonProfiler/raw/master/img/Viewer_PSK_Screenshot.png)
 Each time you select a function in the 'Function' list, the source code for that function will be displayed in the window pane in the lower left.  The code for the top of that function will automatically be centered (vertically) in the source code window pane.
 
 The 'Function' view displays the following columns:
