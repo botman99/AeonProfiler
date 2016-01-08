@@ -157,8 +157,7 @@ void CallerExit(CallerData_t& Call)
 		if( pParentCallTreeRec == nullptr )  // if parent doesn't already exist...
 		{
 			// see if the parent already exists in the Thread's CallTreeHashTable...
-			CCallTreeRecord** pCallTreeRecPtr = pThreadIdRec->CallTreeHashTable->LookupPointer((void*)ParentCallerData->CallerAddress);
-			CCallTreeRecord* pCallTreeRec = *pCallTreeRecPtr;
+			CCallTreeRecord* pCallTreeRec = ParentCallerData->CurrentCallTreeRecord;
 			assert(pCallTreeRec);
 			*pParentCallTreeRecPtr = pCallTreeRec;  // store the pointer to the new record in this child's ParentHashTable
 			pParentCallTreeRec = pCallTreeRec;
@@ -179,9 +178,7 @@ void CallerExit(CallerData_t& Call)
 		CCallTreeRecord* pChildCallTreeRec = *pChildCallTreeRecPtr;
 		if( pChildCallTreeRec == nullptr )  // if this child doesn't already exist...
 		{
-			// see if this child already exists in the Thread's CallTreeHashTable (it should)...
-			CCallTreeRecord** pCallTreeRecPtr = pThreadIdRec->CallTreeHashTable->LookupPointer((void*)CurrentCallerData.CallerAddress);
-			CCallTreeRecord* pCallTreeRec = *pCallTreeRecPtr;
+			CCallTreeRecord* pCallTreeRec = CurrentCallerData.CurrentCallTreeRecord;
 			assert(pCallTreeRec);
 			*pChildCallTreeRecPtr = pCallTreeRec;  // store the pointer to the new record in this child's ParentHashTable
 			pChildCallTreeRec = pCallTreeRec;
