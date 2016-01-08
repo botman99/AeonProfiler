@@ -213,10 +213,6 @@ public:
 		while( pHashRecord )
 		{
 			LinkedListLength++;
-			if( LinkedListLength > MaxListLength )
-			{
-				MaxListLength = LinkedListLength;
-			}
 
 			if( pHashRecord->key == InPointer )
 			{
@@ -225,6 +221,11 @@ public:
 
 			pPrevHashRecord = pHashRecord;  // save the previous pointer (to link in a new one below)
 			pHashRecord = pHashRecord->Next;
+		}
+
+		if (LinkedListLength > MaxListLength)
+		{
+			MaxListLength = LinkedListLength;
 		}
 
 		// didn't find it, so add a new one to the hash table...
@@ -325,13 +326,14 @@ public:
 				while( pHashRecord )
 				{
 					LinkedListLength++;
-					if( LinkedListLength > MaxListLength )
-					{
-						MaxListLength = LinkedListLength;
-					}
 
 					pPrevHashRecord = pHashRecord;  // save the previous pointer (to link in a new one below)
 					pHashRecord = pHashRecord->Next;
+				}
+
+				if (LinkedListLength > MaxListLength)
+				{
+					MaxListLength = LinkedListLength;
 				}
 
 				pHashRecord = p;
