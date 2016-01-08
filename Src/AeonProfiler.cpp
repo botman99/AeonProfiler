@@ -62,7 +62,7 @@ void CallerEnter(CallerData_t& Call)
 	if( ThreadIdHashTable == nullptr )
 	{
 		ThreadIdHashTable = (CHash<CThreadIdRecord>*)GlobalAllocator.AllocateBytes(sizeof(CHash<CThreadIdRecord>), sizeof(void*));
-		new(ThreadIdHashTable) CHash<CThreadIdRecord>(&GlobalAllocator, THREADID_HASH_TABLE_SIZE, true);
+		new(ThreadIdHashTable) CHash<CThreadIdRecord>(&GlobalAllocator, THREADID_HASH_TABLE_SIZE);
 	}
 
 	assert(ThreadIdHashTable);
@@ -135,7 +135,7 @@ void CallerExit(CallerData_t& Call)
 	if( ThreadIdHashTable == nullptr )  // this should never happen (thread id hash table should have been created in CallerEnter)
 	{
 		ThreadIdHashTable = (CHash<CThreadIdRecord>*)GlobalAllocator.AllocateBytes(sizeof(CHash<CThreadIdRecord>), sizeof(void*));
-		new(ThreadIdHashTable) CHash<CThreadIdRecord>(&GlobalAllocator, THREADID_HASH_TABLE_SIZE, true);
+		new(ThreadIdHashTable) CHash<CThreadIdRecord>(&GlobalAllocator, THREADID_HASH_TABLE_SIZE);
 	}
 
 	assert(ThreadIdHashTable);

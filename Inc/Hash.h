@@ -27,7 +27,7 @@ public:
 	unsigned int MaxListLength;		// the length of the longest linked list currently in the hash table
 	unsigned int NumTotalRecords;	// the total number of hash records we have in this hash table
 
-	CHash(CAllocator* InHashAllocator, int InHashTableSize, bool bInWaitOnMutex = false) :
+	CHash(CAllocator* InHashAllocator, int InHashTableSize) :
 		HashAllocator(InHashAllocator)
 		,HashTableSize(InHashTableSize)
 		,NumUsedSlots(0)
