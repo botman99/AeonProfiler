@@ -160,7 +160,7 @@ void CallerExit(CallerData_t& Call)
 		if( ParentCallerData->CurrentCallTreeRecord->ChildrenHashTable == nullptr )
 		{
 			ParentCallerData->CurrentCallTreeRecord->ChildrenHashTable =
-				pThreadIdRec->ThreadIdRecordAllocator.New<CHash<CCallTreeRecord>>(&pThreadIdRec->ThreadIdRecordAllocator, PARENT_CALLRECORD_HASH_TABLE_SIZE);
+				pThreadIdRec->ThreadIdRecordAllocator.New<CHash<CCallTreeRecord>>(&pThreadIdRec->ThreadIdRecordAllocator, CHILDREN_CALLRECORD_HASH_TABLE_SIZE);
 		}
 
 		// see if this child already exists in the parent's ChildrenHashTable
