@@ -68,24 +68,10 @@ void CallerEnter(CallerData_t& Call)
 
 	// look up the thread id record
 	__int64 pTemp = (__int64)Call.ThreadId;  // cast the DWORD ThreadId to a 64 bit value so we can safely cast that to a void pointer
-	CThreadIdRecord** pThreadIdRecPtr = ThreadIdHashTable->LookupPointer((void*)pTemp);
-	CThreadIdRecord* pThreadIdRec = *pThreadIdRecPtr;
-	if( pThreadIdRec == nullptr )
-	{
-		pThreadIdRec = GlobalAllocator.New<CThreadIdRecord>(Call.ThreadId, GlobalAllocator);
-		*pThreadIdRecPtr = pThreadIdRec;  // store the pointer to the new record in the hash
-	}
-
+	CThreadIdRecord* pThreadIdRec = ThreadIdHashTable->EmplaceIfNecessary((void*)pTemp, Call.ThreadId, GlobalAllocator).second;
 	assert(pThreadIdRec);
 
-	CCallTreeRecord** pCallTreeRecPtr = pThreadIdRec->CallTreeHashTable->LookupPointer((void*)Call.CallerAddress);
-	CCallTreeRecord* pCallTreeRec = *pCallTreeRecPtr;
-	if( pCallTreeRec == nullptr )
-	{
-		pCallTreeRec = pThreadIdRec->ThreadIdRecordAllocator->New<CCallTreeRecord>(Call.CallerAddress);
-		*pCallTreeRecPtr = pCallTreeRec;  // store the pointer to the new record in the hash
-	}
-
+	CCallTreeRecord* pCallTreeRec = pThreadIdRec->CallTreeHashTable->EmplaceIfNecessary((void*)Call.CallerAddress, Call.CallerAddress).second;
 	assert(pCallTreeRec);
 
 	pCallTreeRec->EnterTime = Call.Counter;  // keep track of when we entered this function (so the profiler can identify functions that haven't exited yet, things like "main()")
