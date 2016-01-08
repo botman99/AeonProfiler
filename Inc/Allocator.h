@@ -27,4 +27,26 @@ public:
 	void PrintStats(char* Header, int NestLevel);
 
 	void* AllocateBytes(size_t NumBytes, int Alignment);
+
+	template<typename T>
+	T * New()
+	{
+		T * obj = (T*)AllocateBytes(sizeof(T), alignof(T));
+		return new (obj) T();
+	}
+
+	// TODO: Variadic template.
+	template<typename T, typename Arg1>
+	T * New(Arg1 && arg1)
+	{
+		T * obj = (T*)AllocateBytes(sizeof(T), alignof(T));
+		return new (obj) T(std::forward<Arg1>(arg1));
+	}
+
+	template<typename T, typename Arg1, typename Arg2>
+	T * New(Arg1 && arg1, Arg2 && arg2)
+	{
+		T * obj = (T*)AllocateBytes(sizeof(T), alignof(T));
+		return new (obj) T(std::forward<Arg1>(arg1), std::forward<Arg2>(arg2));
+	}
 };

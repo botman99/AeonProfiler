@@ -17,7 +17,7 @@ private:
 
 public:
 
-	CDebugLog(char* filename)
+	CDebugLog(const char* filename)
 	{
 		bIsDebugLogOpen = false;
 		strncpy_s(m_filename, MAX_PATH, filename, strlen(filename));

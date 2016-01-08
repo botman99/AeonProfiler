@@ -61,8 +61,7 @@ void CallerEnter(CallerData_t& Call)
 
 	if( ThreadIdHashTable == nullptr )
 	{
-		ThreadIdHashTable = (CHash<CThreadIdRecord>*)GlobalAllocator.AllocateBytes(sizeof(CHash<CThreadIdRecord>), sizeof(void*));
-		new(ThreadIdHashTable) CHash<CThreadIdRecord>(&GlobalAllocator, THREADID_HASH_TABLE_SIZE);
+		ThreadIdHashTable = GlobalAllocator.New<CHash<CThreadIdRecord>>(&GlobalAllocator, THREADID_HASH_TABLE_SIZE);
 	}
 
 	assert(ThreadIdHashTable);
@@ -73,8 +72,7 @@ void CallerEnter(CallerData_t& Call)
 	CThreadIdRecord* pThreadIdRec = *pThreadIdRecPtr;
 	if( pThreadIdRec == nullptr )
 	{
-		pThreadIdRec = (CThreadIdRecord*)GlobalAllocator.AllocateBytes(sizeof(CThreadIdRecord), sizeof(void*));
-		new(pThreadIdRec) CThreadIdRecord(Call.ThreadId, GlobalAllocator);
+		pThreadIdRec = GlobalAllocator.New<CThreadIdRecord>(Call.ThreadId, GlobalAllocator);
 		*pThreadIdRecPtr = pThreadIdRec;  // store the pointer to the new record in the hash
 	}
 
@@ -84,8 +82,7 @@ void CallerEnter(CallerData_t& Call)
 	CCallTreeRecord* pCallTreeRec = *pCallTreeRecPtr;
 	if( pCallTreeRec == nullptr )
 	{
-		pCallTreeRec = (CCallTreeRecord*)pThreadIdRec->ThreadIdRecordAllocator->AllocateBytes(sizeof(CCallTreeRecord), sizeof(void*));
-		new(pCallTreeRec) CCallTreeRecord(Call.CallerAddress);
+		pCallTreeRec = pThreadIdRec->ThreadIdRecordAllocator->New<CCallTreeRecord>(Call.CallerAddress);
 		*pCallTreeRecPtr = pCallTreeRec;  // store the pointer to the new record in the hash
 	}
 
@@ -134,8 +131,7 @@ void CallerExit(CallerData_t& Call)
 
 	if( ThreadIdHashTable == nullptr )  // this should never happen (thread id hash table should have been created in CallerEnter)
 	{
-		ThreadIdHashTable = (CHash<CThreadIdRecord>*)GlobalAllocator.AllocateBytes(sizeof(CHash<CThreadIdRecord>), sizeof(void*));
-		new(ThreadIdHashTable) CHash<CThreadIdRecord>(&GlobalAllocator, THREADID_HASH_TABLE_SIZE);
+		ThreadIdHashTable = GlobalAllocator.New<CHash<CThreadIdRecord>>(&GlobalAllocator, THREADID_HASH_TABLE_SIZE);
 	}
 
 	assert(ThreadIdHashTable);
@@ -146,8 +142,7 @@ void CallerExit(CallerData_t& Call)
 	CThreadIdRecord* pThreadIdRec = *pThreadIdRecPtr;
 	if( pThreadIdRec == nullptr )  // this should never happen (thread id should have been added in the Enter handler)
 	{
-		pThreadIdRec = (CThreadIdRecord*)GlobalAllocator.AllocateBytes(sizeof(CThreadIdRecord), sizeof(void*));
-		new(pThreadIdRec) CThreadIdRecord(Call.ThreadId, GlobalAllocator);
+		pThreadIdRec = GlobalAllocator.New<CThreadIdRecord>(Call.ThreadId, GlobalAllocator);
 		*pThreadIdRecPtr = pThreadIdRec;
 	}
 
@@ -177,8 +172,8 @@ void CallerExit(CallerData_t& Call)
 		// find the parent calltree record for this child...
 		if( CurrentCallerData.CurrentCallTreeRecord->ParentHashTable == nullptr )  // create the parent hash table if needed
 		{
-			CurrentCallerData.CurrentCallTreeRecord->ParentHashTable = (CHash<CCallTreeRecord>*)pThreadIdRec->ThreadIdRecordAllocator->AllocateBytes(sizeof(CHash<CCallTreeRecord>), sizeof(void*));
-			new(CurrentCallerData.CurrentCallTreeRecord->ParentHashTable) CHash<CCallTreeRecord>(pThreadIdRec->ThreadIdRecordAllocator, PARENT_CALLRECORD_HASH_TABLE_SIZE);
+			CurrentCallerData.CurrentCallTreeRecord->ParentHashTable =
+				pThreadIdRec->ThreadIdRecordAllocator->New<CHash<CCallTreeRecord>>(pThreadIdRec->ThreadIdRecordAllocator, PARENT_CALLRECORD_HASH_TABLE_SIZE);
 		}
 
 		// see if the parent already exists in this child's ParentHashTable
@@ -200,8 +195,8 @@ void CallerExit(CallerData_t& Call)
 		// find the child calltree record in this child's parent...
 		if( ParentCallerData->CurrentCallTreeRecord->ChildrenHashTable == nullptr )
 		{
-			ParentCallerData->CurrentCallTreeRecord->ChildrenHashTable = (CHash<CCallTreeRecord>*)pThreadIdRec->ThreadIdRecordAllocator->AllocateBytes(sizeof(CHash<CCallTreeRecord>), sizeof(void*));
-			new(ParentCallerData->CurrentCallTreeRecord->ChildrenHashTable) CHash<CCallTreeRecord>(pThreadIdRec->ThreadIdRecordAllocator, PARENT_CALLRECORD_HASH_TABLE_SIZE);
+			ParentCallerData->CurrentCallTreeRecord->ChildrenHashTable =
+				pThreadIdRec->ThreadIdRecordAllocator->New<CHash<CCallTreeRecord>>(pThreadIdRec->ThreadIdRecordAllocator, PARENT_CALLRECORD_HASH_TABLE_SIZE);
 		}
 
 		// see if this child already exists in the parent's ChildrenHashTable

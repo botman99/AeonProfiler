@@ -56,14 +56,14 @@ public:
 		Stack_t * item;
 		if (pFree)
 		{
-			item = pFree;
+			item = new(pFree) Stack_t;
 			pFree = pFree->Next;
 		}
 		else
 		{
-			item = (Stack_t*)StackAllocator->AllocateBytes(sizeof(Stack_t), sizeof(void*));
+			item = StackAllocator->New<Stack_t>();
 		}
-		new(item) Stack_t;
+
 		item->Next = pTop;
 		pTop = item;
 

@@ -49,11 +49,10 @@ public:
 
 		if( ThreadIdRecordAllocator )
 		{
-			CallStack = (CStack*)ThreadIdRecordAllocator->AllocateBytes(sizeof(CStack), sizeof(void*));
-			new(CallStack) CStack(ThreadIdRecordAllocator);
+			CallStack = ThreadIdRecordAllocator->New<CStack>(ThreadIdRecordAllocator);
 
-			CallTreeHashTable = (CHash<CCallTreeRecord>*)ThreadIdRecordAllocator->AllocateBytes(sizeof(CHash<CCallTreeRecord>), sizeof(void*));
-			new(CallTreeHashTable) CHash<CCallTreeRecord>(ThreadIdRecordAllocator, CALLRECORD_HASH_TABLE_SIZE);
+			CallTreeHashTable = ThreadIdRecordAllocator->New<CHash<CCallTreeRecord>>(
+				ThreadIdRecordAllocator, CALLRECORD_HASH_TABLE_SIZE);
 		}
 
 		NumThreads++;
