@@ -71,7 +71,7 @@ void CallerEnter(CallerData_t& Call)
 	CThreadIdRecord* pThreadIdRec = ThreadIdHashTable->EmplaceIfNecessary((void*)pTemp, Call.ThreadId, GlobalAllocator).second;
 	assert(pThreadIdRec);
 
-	CCallTreeRecord* pCallTreeRec = pThreadIdRec->CallTreeHashTable->EmplaceIfNecessary((void*)Call.CallerAddress, Call.CallerAddress).second;
+	CCallTreeRecord* pCallTreeRec = pThreadIdRec->CallTreeHashTable.EmplaceIfNecessary((void*)Call.CallerAddress, Call.CallerAddress).second;
 	assert(pCallTreeRec);
 
 	pCallTreeRec->EnterTime = Call.Counter;  // keep track of when we entered this function (so the profiler can identify functions that haven't exited yet, things like "main()")
@@ -105,7 +105,7 @@ void CallerEnter(CallerData_t& Call)
 
 	assert(pThreadIdRec->CallStack);
 
-	pThreadIdRec->CallStack->Push(std::move(CurrentCallerData));
+	pThreadIdRec->CallStack.Push(std::move(CurrentCallerData));
 
 	LeaveCriticalSection(&gCriticalSection);
 }
@@ -129,7 +129,7 @@ void CallerExit(CallerData_t& Call)
 	// get the current call record off of this thread's call stack
 	StackCallerData_t CurrentCallerData;
 
-	pThreadIdRec->CallStack->Pop(std::move(CurrentCallerData));
+	pThreadIdRec->CallStack.Pop(std::move(CurrentCallerData));
 
 	assert( CurrentCallerData.CurrentCallTreeRecord );
 
@@ -138,7 +138,7 @@ void CallerExit(CallerData_t& Call)
 	assert(CurrentCallerData.CurrentCallTreeRecord->StackDepth >= 0);
 
 	// get the parent call record off the top of this thread's call stack
-	StackCallerData_t* ParentCallerData = pThreadIdRec->CallStack->Top();
+	StackCallerData_t* ParentCallerData = pThreadIdRec->CallStack.Top();
 
 	// if we have a parent, then set up the relationship between parent(s) and children...
 	// (each parent has a hash table listing their children and each child has a hash table listing their parents)
@@ -148,7 +148,7 @@ void CallerExit(CallerData_t& Call)
 		if( CurrentCallerData.CurrentCallTreeRecord->ParentHashTable == nullptr )  // create the parent hash table if needed
 		{
 			CurrentCallerData.CurrentCallTreeRecord->ParentHashTable =
-				pThreadIdRec->ThreadIdRecordAllocator->New<CHash<CCallTreeRecord>>(pThreadIdRec->ThreadIdRecordAllocator, PARENT_CALLRECORD_HASH_TABLE_SIZE);
+				pThreadIdRec->ThreadIdRecordAllocator.New<CHash<CCallTreeRecord>>(&pThreadIdRec->ThreadIdRecordAllocator, PARENT_CALLRECORD_HASH_TABLE_SIZE);
 		}
 
 		// see if the parent already exists in this child's ParentHashTable
@@ -160,7 +160,7 @@ void CallerExit(CallerData_t& Call)
 		if( ParentCallerData->CurrentCallTreeRecord->ChildrenHashTable == nullptr )
 		{
 			ParentCallerData->CurrentCallTreeRecord->ChildrenHashTable =
-				pThreadIdRec->ThreadIdRecordAllocator->New<CHash<CCallTreeRecord>>(pThreadIdRec->ThreadIdRecordAllocator, PARENT_CALLRECORD_HASH_TABLE_SIZE);
+				pThreadIdRec->ThreadIdRecordAllocator.New<CHash<CCallTreeRecord>>(&pThreadIdRec->ThreadIdRecordAllocator, PARENT_CALLRECORD_HASH_TABLE_SIZE);
 		}
 
 		// see if this child already exists in the parent's ChildrenHashTable

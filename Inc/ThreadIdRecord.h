@@ -30,31 +30,20 @@ struct DialogThreadIdRecord_t  // "static" copy of CThreadIdRecord for the Dialo
 class CThreadIdRecord
 {
 public:
-	CAllocator* ThreadIdRecordAllocator;  // allocator for this specific thread
+	CAllocator ThreadIdRecordAllocator;  // allocator for this specific thread
 
-	CStack* CallStack;  // the current call stack for this thread
-	CHash<CCallTreeRecord>* CallTreeHashTable;
+	CStack CallStack;  // the current call stack for this thread
+	CHash<CCallTreeRecord> CallTreeHashTable;
 
 	DWORD ThreadId;
 	char* SymbolName;
 
 	CThreadIdRecord(DWORD InThreadId, CAllocator& InAllocator) :
+		ThreadIdRecordAllocator(),
+		CallStack(&ThreadIdRecordAllocator),
+		CallTreeHashTable(&ThreadIdRecordAllocator, CALLRECORD_HASH_TABLE_SIZE),
 		ThreadId( InThreadId )
 	{
-		CallStack = nullptr;
-		CallTreeHashTable = nullptr;
-
-		// create an allocator specifically for this thread
-		ThreadIdRecordAllocator = (CAllocator*)InAllocator.AllocateBytes(sizeof(CAllocator), sizeof(void*));
-
-		if( ThreadIdRecordAllocator )
-		{
-			CallStack = ThreadIdRecordAllocator->New<CStack>(ThreadIdRecordAllocator);
-
-			CallTreeHashTable = ThreadIdRecordAllocator->New<CHash<CCallTreeRecord>>(
-				ThreadIdRecordAllocator, CALLRECORD_HASH_TABLE_SIZE);
-		}
-
 		NumThreads++;
 	}
 
@@ -63,12 +52,7 @@ public:
 		ThreadId = 0;
 		SymbolName = NULL;
 
-		if( ThreadIdRecordAllocator )
-		{
-			ThreadIdRecordAllocator->FreeBlocks();  // free all the memory allocated by this thread's allocator
-		}
-
-		ThreadIdRecordAllocator = nullptr;
+		ThreadIdRecordAllocator.FreeBlocks();  // free all the memory allocated by this thread's allocator
 
 		NumThreads--;
 	}
@@ -85,15 +69,8 @@ public:
 
 		DebugLog("%s%sCThreadIdRecord Stats: ThreadId = %d (0x%08x), SymbolName = '%s'", buffer, Header, ThreadId, ThreadId, SymbolName ? SymbolName : "(Unknown)" );
 
-		if( ThreadIdRecordAllocator )
-		{
-			ThreadIdRecordAllocator->PrintStats("ThreadIdRecordAllocator - ", NestLevel + 1);
-		}
-
-		if( CallTreeHashTable )
-		{
-			CallTreeHashTable->PrintStats("CallTreeHashTable - ", NestLevel + 1);
-		}
+		ThreadIdRecordAllocator.PrintStats("ThreadIdRecordAllocator - ", NestLevel + 1);
+		CallTreeHashTable.PrintStats("CallTreeHashTable - ", NestLevel + 1);
 	}
 
 	unsigned int GetNumRecordsToCopy()
@@ -116,9 +93,9 @@ public:
 		pRec->ThreadId = ThreadId;
 		pRec->SymbolName = SymbolName;
 
-		if( CallStack && CallStack->pTop )  // copy the thread's Stack
+		if( CallStack.pTop )  // copy the thread's Stack
 		{
-			pRec->StackArray = CallStack->CopyStackToArray(InCopyAllocator, pRec->StackArraySize);
+			pRec->StackArray = CallStack.CopyStackToArray(InCopyAllocator, pRec->StackArraySize);
 
 			pRec->Address = pRec->StackArray[0].CallerAddress;
 		}
@@ -127,27 +104,18 @@ public:
 			pRec->Address = nullptr;
 		}
 
-		if( CallTreeHashTable )  // copy the thread's CallTreeHashTable
-		{
-			pRec->CallTreeArray = CallTreeHashTable->CopyHashToArray(InCopyAllocator, pRec->CallTreeArraySize, true);
-		}
+		pRec->CallTreeArray = CallTreeHashTable.CopyHashToArray(InCopyAllocator, pRec->CallTreeArraySize, true);
 
 		return (void*)pRec;
 	}
 
 	void ResetCounters(DWORD64 TimeNow)
 	{
-		// reset the calltree records in the hash table first (the calltree records on the stack need special handling)
-		if( CallTreeHashTable )
-		{
-			CallTreeHashTable->ResetCounters(TimeNow);
-		}
+		// reset the calltree records in the hash table first (the calltree records on the stack need special handling){
+		CallTreeHashTable.ResetCounters(TimeNow);
 
 		// reset the calltree records on the stack last (to set the proper CallCount and MaxRecursionLevel)
-		if( CallStack )
-		{
-			CallStack->ResetCounters(TimeNow);
-		}
+		CallStack.ResetCounters(TimeNow);
 	}
 
 	void SetSymbolName(char* InSymbolName)
@@ -156,13 +124,6 @@ public:
 	}
 
 private:
-	CThreadIdRecord(const CThreadIdRecord& other, CAllocator* InThreadIdRecordAllocator = nullptr)  // copy constructor (this should never get called)
-	{
-		assert(false);
-	}
-
-	CThreadIdRecord& operator=(const CThreadIdRecord&)  // assignment operator (this should never get called)
-	{
-		assert(false);
-	}
+	CThreadIdRecord(const CThreadIdRecord& other, CAllocator* InThreadIdRecordAllocator = nullptr);
+	CThreadIdRecord& operator=(const CThreadIdRecord&);
 };
