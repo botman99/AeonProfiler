@@ -271,26 +271,6 @@ public:
 			(MaxListLength > 10) )  // is the maximum length of any linked list in the hash table more than 10 nodes?
 		{
 			IncreaseHashTableSize();
-
-			// find it again now that the hash table has changed
-			unsigned long rehash = HashPointer(InPointer);
-
-			rehash = rehash % HashTableSize;
-
-			Hash_t* pHashRecord = HashTable[rehash];
-
-			while( pHashRecord )
-			{
-				if( pHashRecord->key == InPointer )
-				{
-					return &pHashRecord->value;
-				}
-
-				pHashRecord = pHashRecord->Next;
-			}
-
-			DebugLog("CHash.LookupPointer(): Failed to find record after IncreaseHashTableSize()!");
-			assert(false);
 		}
 
 		return &pNewHashRec->value;
