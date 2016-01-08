@@ -166,10 +166,7 @@ void CallerExit(CallerData_t& Call)
 
 	CurrentCallerData.CurrentCallTreeRecord->StackDepth--;
 
-	if( CurrentCallerData.CurrentCallTreeRecord->StackDepth < 0 )
-	{
-		CurrentCallerData.CurrentCallTreeRecord->StackDepth = 0;
-	}
+	assert(CurrentCallerData.CurrentCallTreeRecord->StackDepth >= 0);
 
 	// get the parent call record off the top of this thread's call stack
 	StackCallerData_t* ParentCallerData = pThreadIdRec->CallStack->Top();
