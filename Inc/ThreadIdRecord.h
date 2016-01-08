@@ -117,12 +117,11 @@ public:
 		pRec->ThreadId = ThreadId;
 		pRec->SymbolName = SymbolName;
 
-		if( CallStack && CallStack->pBottom )  // copy the thread's Stack
+		if( CallStack && CallStack->pTop )  // copy the thread's Stack
 		{
 			pRec->StackArray = CallStack->CopyStackToArray(InCopyAllocator, pRec->StackArraySize);
 
-			StackCallerData_t& StackBottomCallerData = CallStack->pBottom->value;
-			pRec->Address = StackBottomCallerData.CallerAddress;
+			pRec->Address = pRec->StackArray[0].CallerAddress;
 		}
 		else
 		{

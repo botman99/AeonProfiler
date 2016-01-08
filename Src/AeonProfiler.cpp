@@ -122,7 +122,7 @@ void CallerEnter(CallerData_t& Call)
 
 	assert(pThreadIdRec->CallStack);
 
-	pThreadIdRec->CallStack->Push(&CurrentCallerData);
+	pThreadIdRec->CallStack->Push(std::move(CurrentCallerData));
 
 	LeaveCriticalSection(&gCriticalSection);
 }
@@ -158,9 +158,8 @@ void CallerExit(CallerData_t& Call)
 
 	// get the current call record off of this thread's call stack
 	StackCallerData_t CurrentCallerData;
-	memset(&CurrentCallerData, 0, sizeof(StackCallerData_t));
 
-	pThreadIdRec->CallStack->Pop(&CurrentCallerData);
+	pThreadIdRec->CallStack->Pop(std::move(CurrentCallerData));
 
 	assert( CurrentCallerData.CurrentCallTreeRecord );
 
