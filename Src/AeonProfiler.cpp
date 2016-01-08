@@ -57,10 +57,7 @@ void HandleExit()
 
 void CallerEnter(CallerData_t& Call)
 {
-	if( TryEnterCriticalSection(&gCriticalSection) == 0 )
-	{
-		EnterCriticalSection(&gCriticalSection);
-	}
+	EnterCriticalSection(&gCriticalSection);
 
 	if( ThreadIdHashTable == nullptr )
 	{
@@ -140,10 +137,7 @@ void CallerEnter(CallerData_t& Call)
 
 void CallerExit(CallerData_t& Call)
 {
-	if( TryEnterCriticalSection(&gCriticalSection) == 0 )
-	{
-		EnterCriticalSection(&gCriticalSection);
-	}
+	EnterCriticalSection(&gCriticalSection);
 
 	if( ThreadIdHashTable == nullptr )  // this should never happen (thread id hash table should have been created in CallerEnter)
 	{

@@ -106,10 +106,7 @@ int CaptureCallTreeData()  // return the number of symbols that need to be looke
 		return -1;  // there's no call tree data captured by the profiler yet, we're done
 	}
 
-	if( TryEnterCriticalSection(&gCriticalSection) == 0 )
-	{
-		EnterCriticalSection(&gCriticalSection);
-	}
+	EnterCriticalSection(&gCriticalSection);
 
 	int registers[4];
 	__cpuid(registers, 0);
@@ -358,10 +355,7 @@ void ResetCallTreeData()
 		return;  // there's no call tree data captured by the profiler yet, we're done
 	}
 
-	if( TryEnterCriticalSection(&gCriticalSection) == 0 )
-	{
-		EnterCriticalSection(&gCriticalSection);
-	}
+	EnterCriticalSection(&gCriticalSection);
 
 	int registers[4];
 	__cpuid(registers, 0);
