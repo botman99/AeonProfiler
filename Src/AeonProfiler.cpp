@@ -153,18 +153,8 @@ void CallerExit(CallerData_t& Call)
 
 		// see if the parent already exists in this child's ParentHashTable
 		CCallTreeRecord** pParentCallTreeRecPtr = CurrentCallerData.CurrentCallTreeRecord->ParentHashTable->LookupPointer((void*)ParentCallerData->CallerAddress);
-		CCallTreeRecord* pParentCallTreeRec = *pParentCallTreeRecPtr;
-		if( pParentCallTreeRec == nullptr )  // if parent doesn't already exist...
-		{
-			// see if the parent already exists in the Thread's CallTreeHashTable...
-			CCallTreeRecord* pCallTreeRec = ParentCallerData->CurrentCallTreeRecord;
-			assert(pCallTreeRec);
-			*pParentCallTreeRecPtr = pCallTreeRec;  // store the pointer to the new record in this child's ParentHashTable
-			pParentCallTreeRec = pCallTreeRec;
-		}
-
-		assert(pParentCallTreeRec);
-
+		*pParentCallTreeRecPtr = ParentCallerData->CurrentCallTreeRecord;
+		assert(ParentCallerData->CurrentCallTreeRecord);
 
 		// find the child calltree record in this child's parent...
 		if( ParentCallerData->CurrentCallTreeRecord->ChildrenHashTable == nullptr )
@@ -175,16 +165,8 @@ void CallerExit(CallerData_t& Call)
 
 		// see if this child already exists in the parent's ChildrenHashTable
 		CCallTreeRecord** pChildCallTreeRecPtr = ParentCallerData->CurrentCallTreeRecord->ChildrenHashTable->LookupPointer((void*)CurrentCallerData.CallerAddress);
-		CCallTreeRecord* pChildCallTreeRec = *pChildCallTreeRecPtr;
-		if( pChildCallTreeRec == nullptr )  // if this child doesn't already exist...
-		{
-			CCallTreeRecord* pCallTreeRec = CurrentCallerData.CurrentCallTreeRecord;
-			assert(pCallTreeRec);
-			*pChildCallTreeRecPtr = pCallTreeRec;  // store the pointer to the new record in this child's ParentHashTable
-			pChildCallTreeRec = pCallTreeRec;
-		}
-
-		assert(pChildCallTreeRec);
+		*pChildCallTreeRecPtr = CurrentCallerData.CurrentCallTreeRecord;
+		assert(CurrentCallerData.CurrentCallTreeRecord);
 	}
 
 	// calculate the duration of this function call (subtract _penter time from _pexit time and then subtract the profiler overhead for _penter)
