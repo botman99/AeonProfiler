@@ -129,23 +129,12 @@ void CallerExit(CallerData_t& Call)
 {
 	EnterCriticalSection(&gCriticalSection);
 
-	if( ThreadIdHashTable == nullptr )  // this should never happen (thread id hash table should have been created in CallerEnter)
-	{
-		ThreadIdHashTable = GlobalAllocator.New<CHash<CThreadIdRecord>>(&GlobalAllocator, THREADID_HASH_TABLE_SIZE);
-	}
-
 	assert(ThreadIdHashTable);
 
 	// look up the thread id record
 	__int64 pTemp = (__int64)Call.ThreadId;  // cast the DWORD ThreadId to a 64 bit value so we can safely cast that to a void pointer
 	CThreadIdRecord** pThreadIdRecPtr = ThreadIdHashTable->LookupPointer((void*)pTemp);
 	CThreadIdRecord* pThreadIdRec = *pThreadIdRecPtr;
-	if( pThreadIdRec == nullptr )  // this should never happen (thread id should have been added in the Enter handler)
-	{
-		pThreadIdRec = GlobalAllocator.New<CThreadIdRecord>(Call.ThreadId, GlobalAllocator);
-		*pThreadIdRecPtr = pThreadIdRec;
-	}
-
 	assert(pThreadIdRec);
 
 	assert( pThreadIdRec->CallStack );
