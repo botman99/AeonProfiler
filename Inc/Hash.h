@@ -216,7 +216,7 @@ public:
 
 			if( pHashRecord->key == InPointer )
 			{
-				return &(T*)pHashRecord->value;
+				return &pHashRecord->value;
 			}
 
 			pPrevHashRecord = pHashRecord;  // save the previous pointer (to link in a new one below)
@@ -283,7 +283,7 @@ public:
 			{
 				if( pHashRecord->key == InPointer )
 				{
-					return &(T*)pHashRecord->value;
+					return &pHashRecord->value;
 				}
 
 				pHashRecord = pHashRecord->Next;
