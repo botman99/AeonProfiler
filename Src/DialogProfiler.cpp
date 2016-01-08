@@ -34,9 +34,6 @@ unsigned int CaptureCallTreeThreadArraySize = 0;
 DWORD64 CaptureCallTreeTime;
 int CaptureCallTreeSymbolsToInitialize = 0;
 
-
-DialogCallTreeRecord_t* FindCallTreeRecord_BinarySearch(void* InAddress);
-void CopyThreadIdHash();
 void InitializeSymbolLookup();
 char* LookupAddressSymbolName(DWORD64 dw64Address);
 
