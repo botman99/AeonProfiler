@@ -103,8 +103,6 @@ void CallerEnter(CallerData_t& Call)
 		CurrentCallerData.ProfilerOverhead = 0;
 	}
 
-	assert(pThreadIdRec->CallStack);
-
 	pThreadIdRec->CallStack.Push(std::move(CurrentCallerData));
 
 	LeaveCriticalSection(&gCriticalSection);
@@ -123,8 +121,7 @@ void CallerExit(CallerData_t& Call)
 	CThreadIdRecord* pThreadIdRec = *pThreadIdRecPtr;
 	assert(pThreadIdRec);
 
-	assert( pThreadIdRec->CallStack );
-	assert( !pThreadIdRec->CallStack->IsEmpty() );
+	assert( !pThreadIdRec->CallStack.IsEmpty() );
 
 	// get the current call record off of this thread's call stack
 	StackCallerData_t CurrentCallerData;
