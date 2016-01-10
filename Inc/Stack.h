@@ -44,6 +44,7 @@ public:
 
 	CStack(CAllocator* InStackAllocator) :
 		StackAllocator(InStackAllocator)
+		,pFree(nullptr)
 		,pTop(nullptr)
 		,StackSize(0)
 	{
