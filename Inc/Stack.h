@@ -112,13 +112,7 @@ public:
 			int index = 0;
 			Stack_t* pNode = pTop;
 
-			// base of array is the bottom of the stack
-			while (pNode && pNode->Next)
-			{
-				pNode = pNode->Next;
-			}
-
-			while( pNode && (index < StackSize) )
+			while( pNode )
 			{
 				pArray[index].ThreadId = pNode->value.ThreadId;
 				pArray[index].Counter = pNode->value.Counter;

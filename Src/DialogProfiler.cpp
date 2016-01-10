@@ -180,7 +180,7 @@ void WINAPI ProcessCallTreeDataThread(LPVOID lpData)
 		}
 
 		// go through the Stack and calculate call durations for functions that have been entered but not exited yet...
-		for( int StackIndex = ThreadRec->StackArraySize-1; StackIndex >= 0; StackIndex-- )  // work from top of stack down to bottom
+		for (unsigned int StackIndex = 0; StackIndex < ThreadRec->StackArraySize; StackIndex++)  // work from top of stack down to bottom
 		{
 			// handle calculating values the same way that CallerExit() does
 
