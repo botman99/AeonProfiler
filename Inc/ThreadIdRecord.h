@@ -78,7 +78,7 @@ public:
 		return 1;
 	}
 
-	void* GetArrayCopy(CAllocator* InCopyAllocator, bool bCopyMemberHashTables)
+	DialogThreadIdRecord_t* GetArrayCopy(CAllocator* InCopyAllocator, bool bCopyMemberHashTables)
 	{
 		DialogThreadIdRecord_t* pRec = (DialogThreadIdRecord_t*)InCopyAllocator->AllocateBytes(sizeof(DialogThreadIdRecord_t), sizeof(void*));
 
@@ -106,7 +106,7 @@ public:
 
 		pRec->CallTreeArray = CallTreeHashTable.CopyHashToArray(InCopyAllocator, pRec->CallTreeArraySize, true);
 
-		return (void*)pRec;
+		return pRec;
 	}
 
 	void ResetCounters(DWORD64 TimeNow)

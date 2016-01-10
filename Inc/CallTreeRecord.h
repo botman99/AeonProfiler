@@ -104,7 +104,7 @@ public:
 		return 0;
 	}
 
-	void* GetArrayCopy(CAllocator* InCopyAllocator, bool bCopyMemberHashTables)
+	DialogCallTreeRecord_t* GetArrayCopy(CAllocator* InCopyAllocator, bool bCopyMemberHashTables)
 	{
 		DialogCallTreeRecord_t* pRec = (DialogCallTreeRecord_t*)InCopyAllocator->AllocateBytes(sizeof(DialogCallTreeRecord_t), sizeof(void*));
 
@@ -144,7 +144,7 @@ public:
 
 		pRec->SymbolName = SymbolName;
 
-		return (void*)pRec;
+		return pRec;
 	}
 
 	void ResetCounters(DWORD64 TimeNow)
