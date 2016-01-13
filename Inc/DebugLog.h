@@ -8,6 +8,8 @@
 
 using namespace std;
 
+#define USE_DEBUGLOG 0  // change this to 1 if you want to enable the debug logging
+
 class CDebugLog
 {
 private:
@@ -93,7 +95,7 @@ public:
 
 extern CDebugLog* gDebugLog;
 
-#if _DEBUG
+#if USE_DEBUGLOG
 #define DebugLog(msg, ...) if(gDebugLog) gDebugLog->Log(msg, ##__VA_ARGS__)
 #else
 #define DebugLog(msg, ...)
