@@ -1,7 +1,7 @@
 
 #include <Windows.h>
 #include <math.h>
-#include <map>
+#include <unordered_map>
 
 #include "Splitter.h"
 #include "Dialog.h"
@@ -11,7 +11,7 @@
 CSplitter* CreateSplitterWindow;
 
 // This map is used to look up the Splitter class instance given the hwnd for the parent of that splitter window
-std::map<HWND, CSplitter*> SplitterWindowMap;
+std::unordered_map<HWND, CSplitter*> SplitterWindowMap;
 
 WCHAR splitter_classname[16];
 int splitter_count = 0;
