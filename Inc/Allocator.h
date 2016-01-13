@@ -3,6 +3,10 @@
 
 #include <type_traits>
 
+#pragma warning( push )
+#pragma warning( disable : 4345 )  // ignore warning "behavior change: an object of POD type constructed with an initializer of the form () will be default-initialized"
+
+
 class CAllocator  // super simple allocator that uses VirtualAlloc to allocate memory
 {
 private:
@@ -52,3 +56,5 @@ public:
 		return new (obj) T(std::forward<Arg1>(arg1), std::forward<Arg2>(arg2));
 	}
 };
+
+#pragma warning( pop )
