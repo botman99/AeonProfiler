@@ -17,17 +17,17 @@ public:
 
 	CAllocator* HashAllocator;
 
-	volatile int HashTableSize;
-	volatile Hash_t** HashTable;		// array of pointers to Hash_t structs
+	int HashTableSize;
+	Hash_t** HashTable;		// array of pointers to Hash_t structs
 
-	volatile Hash_t** OldHashTable;		// this points to the next free byte from the old hash table (after calling IncreaseHashTableSize())
+	Hash_t** OldHashTable;		// this points to the next free byte from the old hash table (after calling IncreaseHashTableSize())
 	size_t OldHashTableFreeRemaining;
 
 	unsigned int NumUsedSlots;		// number of slots were are currently using in the hash table array
 	unsigned int MaxListLength;		// the length of the longest linked list currently in the hash table
 	unsigned int NumTotalRecords;	// the total number of hash records we have in this hash table
 
-	CHash(CAllocator* InHashAllocator, int InHashTableSize, bool bInWaitOnMutex = false) :
+	CHash(CAllocator* InHashAllocator, int InHashTableSize) :
 		HashAllocator(InHashAllocator)
 		,HashTableSize(InHashTableSize)
 		,NumUsedSlots(0)
@@ -37,7 +37,7 @@ public:
 		HashTable = nullptr;
 		if( HashAllocator && HashTableSize )
 		{
-			HashTable = (volatile Hash_t**)HashAllocator->AllocateBytes(HashTableSize * sizeof(Hash_t*), sizeof(void*));
+			HashTable = (Hash_t**)HashAllocator->AllocateBytes(HashTableSize * sizeof(Hash_t*), sizeof(void*));
 		}
 	}
 
@@ -63,7 +63,7 @@ public:
 		
 		for( int i = 0; i < HashTableSize; i++ )
 		{
-			Hash_t* p = (Hash_t*)HashTable[i];
+			Hash_t* p = HashTable[i];
 			while( p )
 			{
 				p->value->PrintStats("", NestLevel + 1);
@@ -85,7 +85,7 @@ public:
 			// get the actual number of records that need to be copied (this can be less than NumTotalRecords for calltree records that have been reset to zero)
 			for( int i = 0; i < HashTableSize; i++ )
 			{
-				Hash_t* p = (Hash_t*)HashTable[i];
+				Hash_t* p = HashTable[i];
 				while( p )
 				{
 					NumTotalRecordsToCopy += p->value->GetNumRecordsToCopy();
@@ -102,7 +102,7 @@ public:
 
 				for( int i = 0; i < HashTableSize; i++ )
 				{
-					Hash_t* p = (Hash_t*)HashTable[i];
+					Hash_t* p = HashTable[i];
 					while( p )
 					{
 						void* ptr = nullptr;
@@ -139,7 +139,7 @@ public:
 		{
 			for( int i = 0; i < HashTableSize; i++ )
 			{
-				Hash_t* p = (Hash_t*)HashTable[i];
+				Hash_t* p = HashTable[i];
 				while( p )
 				{
 					p->value->ResetCounters(TimeNow);
@@ -187,7 +187,7 @@ public:
 
 		if( OldHashTableFreeRemaining >= sizeof(Hash_t) )  // if there is room left for another Hash_t allocation...
 		{
-			OldHashTable = (volatile Hash_t**)pAlignedFreePointer;  // update the OldHashTable pointer to point to the next free aligned address
+			OldHashTable = (Hash_t**)pAlignedFreePointer;  // update the OldHashTable pointer to point to the next free aligned address
 		}
 		else  // otherwise, we're out of room so null out the OldHashTable pointer (so we don't use it anymore)
 		{
@@ -205,26 +205,27 @@ public:
 
 		hash = hash % HashTableSize;
 
-		volatile Hash_t* pHashRecord = HashTable[hash];
-		volatile Hash_t* pPrevHashRecord = nullptr;
+		Hash_t* pHashRecord = HashTable[hash];
+		Hash_t* pPrevHashRecord = nullptr;
 
 		unsigned int LinkedListLength = 0;
 
 		while( pHashRecord )
 		{
 			LinkedListLength++;
-			if( LinkedListLength > MaxListLength )
-			{
-				MaxListLength = LinkedListLength;
-			}
 
 			if( pHashRecord->key == InPointer )
 			{
-				return &(T*)pHashRecord->value;
+				return &pHashRecord->value;
 			}
 
 			pPrevHashRecord = pHashRecord;  // save the previous pointer (to link in a new one below)
 			pHashRecord = pHashRecord->Next;
+		}
+
+		if (LinkedListLength > MaxListLength)
+		{
+			MaxListLength = LinkedListLength;
 		}
 
 		// didn't find it, so add a new one to the hash table...
@@ -270,39 +271,65 @@ public:
 			(MaxListLength > 10) )  // is the maximum length of any linked list in the hash table more than 10 nodes?
 		{
 			IncreaseHashTableSize();
-
-			// find it again now that the hash table has changed
-			unsigned long rehash = HashPointer(InPointer);
-
-			rehash = rehash % HashTableSize;
-
-			volatile Hash_t* pHashRecord = HashTable[rehash];
-
-			while( pHashRecord )
-			{
-				if( pHashRecord->key == InPointer )
-				{
-					return &(T*)pHashRecord->value;
-				}
-
-				pHashRecord = pHashRecord->Next;
-			}
-
-			DebugLog("CHash.LookupPointer(): Failed to find record after IncreaseHashTableSize()!");
-			assert(false);
 		}
 
 		return &pNewHashRec->value;
 	}
 
+	std::pair<bool, T *> EmplaceIfNecessary(const void* InPointer)
+	{
+		T** LookupResultPtr = LookupPointer(InPointer);
+		T* LookupResult = *LookupResultPtr;
+		bool newResult = false;
+		if (LookupResult == nullptr)
+		{
+			LookupResult = HashAllocator->New<T>();
+			*LookupResultPtr = LookupResult;
+			newResult = true;
+		}
+		return std::make_pair(newResult, LookupResult);
+	}
+
+	// TODO: Variadic templates
+	template<typename Arg1>
+	std::pair<bool, T *> EmplaceIfNecessary(const void* InPointer, Arg1 && arg1)
+	{
+		T** LookupResultPtr = LookupPointer(InPointer);
+		T* LookupResult = *LookupResultPtr;
+		bool newResult = false;
+		if (LookupResult == nullptr)
+		{
+			LookupResult = HashAllocator->New<T>(std::forward<Arg1>(arg1));
+			*LookupResultPtr = LookupResult;
+			newResult = true;
+		}
+		return std::make_pair(newResult, LookupResult);
+	}
+
+	// TODO: Variadic templates
+	template<typename Arg1, typename Arg2>
+	std::pair<bool, T *> EmplaceIfNecessary(const void* InPointer, Arg1 && arg1, Arg2 && arg2)
+	{
+		T** LookupResultPtr = LookupPointer(InPointer);
+		T* LookupResult = *LookupResultPtr;
+		bool newResult = false;
+		if (LookupResult == nullptr)
+		{
+			LookupResult = HashAllocator->New<T>(std::forward<Arg1>(arg1), std::forward<Arg2>(arg2));
+			*LookupResultPtr = LookupResult;
+			newResult = true;
+		}
+		return std::make_pair(newResult, LookupResult);
+	}
+
 	void IncreaseHashTableSize()  // increase the size of this hash table to reduce collisions
 	{
-		volatile int OldHashTableSize = HashTableSize;
+		int OldHashTableSize = HashTableSize;
 		OldHashTableFreeRemaining = OldHashTableSize * sizeof(Hash_t*);
 		OldHashTable = HashTable;
 
 		HashTableSize = HashTableSize * 2;
-		HashTable = (volatile Hash_t**)HashAllocator->AllocateBytes(HashTableSize * sizeof(Hash_t*), sizeof(void*));
+		HashTable = (Hash_t**)HashAllocator->AllocateBytes(HashTableSize * sizeof(Hash_t*), sizeof(void*));
 
 		NumUsedSlots = 0;
 		MaxListLength = 0;
@@ -310,28 +337,29 @@ public:
 
 		for( int i = 0; i < OldHashTableSize; i++ )
 		{
-			Hash_t* p = (Hash_t*)OldHashTable[i];
+			Hash_t* p = OldHashTable[i];
 			while( p )
 			{
 				unsigned long new_rehash = HashPointer(p->key);
 
 				new_rehash = new_rehash % HashTableSize;
 
-				volatile Hash_t* pHashRecord = HashTable[new_rehash];
-				volatile Hash_t* pPrevHashRecord = nullptr;
+				Hash_t* pHashRecord = HashTable[new_rehash];
+				Hash_t* pPrevHashRecord = nullptr;
 
 				unsigned int LinkedListLength = 0;
 
 				while( pHashRecord )
 				{
 					LinkedListLength++;
-					if( LinkedListLength > MaxListLength )
-					{
-						MaxListLength = LinkedListLength;
-					}
 
 					pPrevHashRecord = pHashRecord;  // save the previous pointer (to link in a new one below)
 					pHashRecord = pHashRecord->Next;
+				}
+
+				if (LinkedListLength > MaxListLength)
+				{
+					MaxListLength = LinkedListLength;
 				}
 
 				pHashRecord = p;
@@ -347,7 +375,7 @@ public:
 				}
 				else  // otherwise, add this new record to the end of the linked list
 				{
-					pPrevHashRecord->Next = (Hash_t*)pHashRecord;
+					pPrevHashRecord->Next = pHashRecord;
 				}
 
 				NumTotalRecords++;

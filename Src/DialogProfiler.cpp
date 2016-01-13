@@ -34,9 +34,6 @@ unsigned int CaptureCallTreeThreadArraySize = 0;
 DWORD64 CaptureCallTreeTime;
 int CaptureCallTreeSymbolsToInitialize = 0;
 
-
-DialogCallTreeRecord_t* FindCallTreeRecord_BinarySearch(void* InAddress);
-void CopyThreadIdHash();
 void InitializeSymbolLookup();
 char* LookupAddressSymbolName(DWORD64 dw64Address);
 
@@ -106,10 +103,7 @@ int CaptureCallTreeData()  // return the number of symbols that need to be looke
 		return -1;  // there's no call tree data captured by the profiler yet, we're done
 	}
 
-	if( TryEnterCriticalSection(&gCriticalSection) == 0 )
-	{
-		EnterCriticalSection(&gCriticalSection);
-	}
+	EnterCriticalSection(&gCriticalSection);
 
 	int registers[4];
 	__cpuid(registers, 0);
@@ -186,7 +180,7 @@ void WINAPI ProcessCallTreeDataThread(LPVOID lpData)
 		}
 
 		// go through the Stack and calculate call durations for functions that have been entered but not exited yet...
-		for( int StackIndex = ThreadRec->StackArraySize-1; StackIndex >= 0; StackIndex-- )  // work from top of stack down to bottom
+		for (unsigned int StackIndex = 0; StackIndex < ThreadRec->StackArraySize; StackIndex++)  // work from top of stack down to bottom
 		{
 			// handle calculating values the same way that CallerExit() does
 
@@ -358,10 +352,7 @@ void ResetCallTreeData()
 		return;  // there's no call tree data captured by the profiler yet, we're done
 	}
 
-	if( TryEnterCriticalSection(&gCriticalSection) == 0 )
-	{
-		EnterCriticalSection(&gCriticalSection);
-	}
+	EnterCriticalSection(&gCriticalSection);
 
 	int registers[4];
 	__cpuid(registers, 0);

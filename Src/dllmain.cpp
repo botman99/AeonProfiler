@@ -75,11 +75,9 @@ BOOL APIENTRY DllMain( HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReser
 		case DLL_PROCESS_ATTACH:
 
 #if _M_X64
-			gDebugLog = (CDebugLog*)GlobalAllocator.AllocateBytes(sizeof(CDebugLog), sizeof(void*));
-			new(gDebugLog) CDebugLog("AeonProfiler64.log");
+			gDebugLog = GlobalAllocator.New<CDebugLog>("AeonProfiler64.log");
 #else
-			gDebugLog = (CDebugLog*)GlobalAllocator.AllocateBytes(sizeof(CDebugLog), sizeof(void*));
-			new(gDebugLog) CDebugLog("AeonProfiler32.log");
+			gDebugLog = GlobalAllocator.New<CDebugLog>("AeonProfiler32.log");
 #endif
 
 			DebugLog("***** DLL_PROCESS_ATTACH *****");

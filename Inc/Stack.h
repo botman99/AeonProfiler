@@ -32,20 +32,19 @@ public:
 	struct Stack_t
 	{
 		StackCallerData_t value;
-		Stack_t* Prev;
 		Stack_t* Next;
 	};
 
 	CAllocator* StackAllocator;
 
-	Stack_t* pBottom;  // the bottom node of the stack (even if empty)
+	Stack_t* pFree;
 	Stack_t* pTop;  // the top node of the stack (if this is null the stack is empty)
 
 	int StackSize;
 
 	CStack(CAllocator* InStackAllocator) :
 		StackAllocator(InStackAllocator)
-		,pBottom(nullptr)
+		,pFree(nullptr)
 		,pTop(nullptr)
 		,StackSize(0)
 	{
@@ -53,71 +52,39 @@ public:
 
 	~CStack() {}
 
-	void Push(StackCallerData_t* InValue)
+	void Push(StackCallerData_t && InValue)
 	{
-		if( InValue == nullptr )
+		Stack_t * item;
+		if (pFree)
 		{
-			return;
+			item = new(pFree) Stack_t;
+			pFree = pFree->Next;
+		}
+		else
+		{
+			item = StackAllocator->New<Stack_t>();
 		}
 
-		if( pBottom == nullptr )  // no stack nodes created yet
-		{
-			pBottom = (Stack_t*)StackAllocator->AllocateBytes(sizeof(Stack_t), sizeof(void*));
+		item->Next = pTop;
+		pTop = item;
 
-			pBottom->Prev = nullptr;
-			pBottom->Next = nullptr;
-
-			pTop = pBottom;
-		}
-		else if( pTop == nullptr )  // stack is empty
-		{
-			pTop = pBottom;
-		}
-		else if( pTop->Next != nullptr )  // top points to available free node
-		{
-			pTop = pTop->Next;
-		}
-		else  // otherwise we need to link in a new node
-		{
-			pTop->Next = (Stack_t*)StackAllocator->AllocateBytes(sizeof(Stack_t), sizeof(void*));
-
-			pTop->Next->Prev = pTop;  // link back to previous node
-			pTop = pTop->Next;
-			pTop->Next = nullptr;
-		}
-
-		pTop->value = *InValue;
+		pTop->value = std::move(InValue);
 
 		StackSize++;
 	}
 
-	bool Pop(StackCallerData_t* OutValue)
+	void Pop(StackCallerData_t && OutValue)
 	{
-		if( OutValue == nullptr )
-		{
-			return false;
-		}
+		assert(pTop);
 
-		if( pTop )
-		{
-			*OutValue = pTop->value;
+		OutValue = std::move(pTop->value);
+		Stack_t * next = pTop->Next;
+		pTop->Next = pFree;
+		pFree = pTop;
+		pTop = next;
 
-			if( pTop->Prev != nullptr )  // is pTop not equal to pBottom?
-			{
-				pTop = pTop->Prev;
-			}
-			else
-			{
-				pTop = nullptr;
-			}
-
-			StackSize--;
-			assert(StackSize >= 0);
-
-			return true;
-		}
-
-		return false;
+		StackSize--;
+		assert(StackSize >= 0);
 	}
 
 	StackCallerData_t* Top()
@@ -139,14 +106,14 @@ public:
 	{
 		OutArraySize = 0;
 
-		if( InCopyAllocator && pBottom )
+		if( InCopyAllocator )
 		{
 			DialogStackCallerData_t* pArray = (DialogStackCallerData_t*)InCopyAllocator->AllocateBytes(StackSize * sizeof(DialogStackCallerData_t), sizeof(void*));
 
 			int index = 0;
-			Stack_t* pNode = pBottom;  // base of array is the bottom of the stack
+			Stack_t* pNode = pTop;
 
-			while( pNode && (index < StackSize) )
+			while( pNode )
 			{
 				pArray[index].ThreadId = pNode->value.ThreadId;
 				pArray[index].Counter = pNode->value.Counter;
@@ -173,7 +140,7 @@ public:
 	void ResetCounters(DWORD64 TimeNow)
 	{
 		int index = 0;
-		Stack_t* pNode = pBottom;  // base of array is the bottom of the stack
+		Stack_t* pNode = pTop;  // base of array is the bottom of the stack
 
 		while( pNode && (index < StackSize) )
 		{
