@@ -14,8 +14,6 @@
 int DialogListViewThreadIndex = -1;  // the index of the thread currently selected from the ThreadArray (-1 means invalid thread)
 int gPreviouslySelectedRow = -1;
 
-bool bOptionDisplayTimeAsTicks = false;
-
 
 // ListView default settings for the three child windows...
 struct ListViewColumnsDefaults
@@ -883,27 +881,13 @@ void ListViewNotify(HWND hWnd, LPARAM lParam)
 					}
 					else if( column == 3 )  // exclusive time
 					{
-						if( bOptionDisplayTimeAsTicks )
-						{
-							swprintf(Buffer, buffer_len, TEXT("%I64d"), ListView_record->CallDurationExclusiveTimeSum);
-						}
-						else
-						{
-							ConvertTicksToTime(Buffer, buffer_len, ListView_record->CallDurationExclusiveTimeSum);
-						}
+						ConvertTicksToTime(Buffer, buffer_len, ListView_record->CallDurationExclusiveTimeSum);
 
 						wcsncpy_s(lpdi->item.pszText, lpdi->item.cchTextMax, Buffer, buffer_len);
 					}
 					else if( column == 4 )  // inclusive time
 					{
-						if( bOptionDisplayTimeAsTicks )
-						{
-							swprintf(Buffer, buffer_len, TEXT("%I64d"), ListView_record->CallDurationInclusiveTimeSum);
-						}
-						else
-						{
-							ConvertTicksToTime(Buffer, buffer_len, ListView_record->CallDurationInclusiveTimeSum);
-						}
+						ConvertTicksToTime(Buffer, buffer_len, ListView_record->CallDurationInclusiveTimeSum);
 
 						wcsncpy_s(lpdi->item.pszText, lpdi->item.cchTextMax, Buffer, buffer_len);
 					}
@@ -911,14 +895,7 @@ void ListViewNotify(HWND hWnd, LPARAM lParam)
 					{
 						float ExclusiveTimeAvg = (ListView_record->CallCount > 0) ? ((float)ListView_record->CallDurationExclusiveTimeSum / (float)ListView_record->CallCount) : 0.f;
 
-						if( bOptionDisplayTimeAsTicks )
-						{
-							swprintf(Buffer, buffer_len, TEXT("%0.3f"), ExclusiveTimeAvg);
-						}
-						else
-						{
-							ConvertTicksToTime(Buffer, buffer_len, ExclusiveTimeAvg);
-						}
+						ConvertTicksToTime(Buffer, buffer_len, ExclusiveTimeAvg);
 
 						wcsncpy_s(lpdi->item.pszText, lpdi->item.cchTextMax, Buffer, buffer_len);
 					}
@@ -926,14 +903,7 @@ void ListViewNotify(HWND hWnd, LPARAM lParam)
 					{
 						float InclusiveTimeAvg = (ListView_record->CallCount > 0) ? ((float)ListView_record->CallDurationInclusiveTimeSum / (float)ListView_record->CallCount) : 0.f;
 
-						if( bOptionDisplayTimeAsTicks )
-						{
-							swprintf(Buffer, buffer_len, TEXT("%0.3f"), InclusiveTimeAvg);
-						}
-						else
-						{
-							ConvertTicksToTime(Buffer, buffer_len, InclusiveTimeAvg);
-						}
+						ConvertTicksToTime(Buffer, buffer_len, InclusiveTimeAvg);
 
 						wcsncpy_s(lpdi->item.pszText, lpdi->item.cchTextMax, Buffer, buffer_len);
 					}
@@ -945,14 +915,7 @@ void ListViewNotify(HWND hWnd, LPARAM lParam)
 					}
 					else if( column == 8 )  // max call time
 					{
-						if( bOptionDisplayTimeAsTicks )
-						{
-							swprintf(Buffer, buffer_len, TEXT("%I64d"), ListView_record->MaxCallDurationExclusiveTime);
-						}
-						else
-						{
-							ConvertTicksToTime(Buffer, buffer_len, ListView_record->MaxCallDurationExclusiveTime);
-						}
+						ConvertTicksToTime(Buffer, buffer_len, ListView_record->MaxCallDurationExclusiveTime);
 
 						wcsncpy_s(lpdi->item.pszText, lpdi->item.cchTextMax, Buffer, buffer_len);
 					}
