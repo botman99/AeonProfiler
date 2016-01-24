@@ -1,6 +1,5 @@
 
 #include "windows.h"
-#include <unordered_map>
 
 #include "Allocator.h"
 #include "TextViewer.h"
@@ -11,8 +10,6 @@ char TextViewerFileName[MAX_PATH] = {""};  // the most recent file loaded into t
 
 TCHAR* TextViewerBuffer = nullptr;  // the unicode text buffer to display in the source code text window
 int TextViewBuffer_TotalSize = 0;
-
-std::unordered_map<int, int> LineNumberToBufferPositionMap;
 
 
 int GetSizeOfTextBufferInUnicode(char* buffer, int buffer_length)
@@ -43,49 +40,25 @@ int GetSizeOfTextBufferInUnicode(char* buffer, int buffer_length)
 void ConvertTextFileBufferToUnicode(char* buffer, int buffer_length, TCHAR* tchar_buffer)
 {
 	int count = 0;
-	int offset = 0;  // character offset into unichar buffer
-	int line_number = 1;
-	bool bIsStartOfLine = true;
 
 	const char* p = buffer;
 	TCHAR* tchar_p = tchar_buffer;
 
 	while( *p && count < buffer_length )
 	{
-		if( bIsStartOfLine )
-		{
-			LineNumberToBufferPositionMap.emplace(line_number, offset);
-			bIsStartOfLine = false;
-		}
-
 		if( *p == '\n' )
 		{
 			*tchar_p++ = TCHAR('\r');
 			*tchar_p++ = TCHAR('\n');
-			offset += 2;
-			line_number++;
-			bIsStartOfLine = true;
 		}
 		else if( *p != '\r' )
 		{
 			*tchar_p++ = TCHAR(*p);
-			offset += 1;
 		}
 
 		count++;
 		p++;
 	}
-}
-
-void InitializeTextLineBuffer(char* buffer, int buffer_length)
-{
-	LineNumberToBufferPositionMap.clear();
-
-	TextViewBuffer_TotalSize = GetSizeOfTextBufferInUnicode(buffer, buffer_length) + 2;  // plus 2 for null at the end
-
-	TextViewerBuffer = (TCHAR*)TextViewerAllocator.AllocateBytes(TextViewBuffer_TotalSize, sizeof(void*));
-
-	ConvertTextFileBufferToUnicode(buffer, buffer_length, TextViewerBuffer);
 }
 
 void LoadTextFile(char* filename)
@@ -119,6 +92,11 @@ void LoadTextFile(char* filename)
 
 		TextViewer_FileBuffer[length-1] = 0;  // make sure buffer is null terminated
 
-		InitializeTextLineBuffer(TextViewer_FileBuffer, length);
+		TextViewBuffer_TotalSize = GetSizeOfTextBufferInUnicode(TextViewer_FileBuffer, length) + 2;  // plus 2 for null at the end
+
+		TextViewerBuffer = (TCHAR*)TextViewerAllocator.AllocateBytes(TextViewBuffer_TotalSize, sizeof(void*));
+
+		ConvertTextFileBufferToUnicode(TextViewer_FileBuffer, length, TextViewerBuffer);
+
 	}
 }

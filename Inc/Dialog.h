@@ -82,4 +82,6 @@ void ListViewSetRowSelected(HWND hWnd, int row, DialogThreadIdRecord_t* ListView
 int ListView_SortCallTree(const void* arg1, const void* arg2);
 void ListViewNotify(HWND hWnd, LPARAM lParam);
 
+DialogCallTreeRecord_t* GetListViewRecordForRow(HWND hwndFrom, unsigned int row);
+
 int FindRowForAddress(HWND hWnd, const void* Address);
