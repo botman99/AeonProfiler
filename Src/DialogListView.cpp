@@ -40,6 +40,12 @@ ListViewColumnsDefaults ChildWindowParentFunctionsDefaults[] = {
 	{ TEXT("#"), SORT_Unused, false, 50, false },							// column 1 (the row number)
 	{ TEXT("Parents"), SORT_Increasing, true, 200, true },					// column 2 (the parent function name)
 	{ TEXT("Times Called"), SORT_Decreasing, false, 80, false },			// column 3 (number of times called)
+	{ TEXT("Exclusive Time Sum"), SORT_Decreasing, false, 120, false },		// column 4 (exclusive time)
+	{ TEXT("Inclusive Time Sum"), SORT_Decreasing, false, 120, false },		// column 5 (inclusive time)
+	{ TEXT("Avg. Exclusive Time"), SORT_Decreasing, true, 120, false },		// column 6 (average exclusive time)
+	{ TEXT("Avg. Inclusive Time"), SORT_Decreasing, false, 120, false },	// column 7 (average inclusive time)
+	{ TEXT("Max Recursion"), SORT_Decreasing, false, 90, false },			// column 8 (maximum recursion level)
+	{ TEXT("Max Exclusive Time"), SORT_Decreasing, false, 120, false },		// column 9 (maximum exclusive time)
 };
 
 ListViewColumnsDefaults ChildWindowChildrenFunctionsDefaults[] = {
@@ -677,7 +683,7 @@ void ListViewSetRowSelected(HWND hWnd, int row, DialogThreadIdRecord_t* ListView
 
 						extern int TextWindowFontHeight;
 
-						int char_index = SendMessage(hChildWindowTextViewer, EM_LINEINDEX, LineNumber - 1, 0);  // minus one because the EDIT window line numbers are zero-based
+						int char_index = (int)SendMessage(hChildWindowTextViewer, EM_LINEINDEX, LineNumber - 1, 0);  // minus one because the EDIT window line numbers are zero-based
 						if( char_index >= 0 )
 						{
 							SendMessage(hChildWindowTextViewer, EM_SETSEL, char_index, char_index);

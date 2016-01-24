@@ -472,9 +472,7 @@ LRESULT CALLBACK WndListViewSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LP
 
 							// NOTE: The header text here does not include the function name (which is of variable length).  It is handled separately.
 							// We format time values as 14 characters wide.  This gives us 6 digits before the decimal point, the decimal, 3 digits more plus a space, 4 characters (see ConvertTicksToTime() for details)
-							char* txt_header_functions = {"Times Called  Exclusive Time Sum  Inclusive Time Sum  Avg. Exclusive Time  Avg. Inclusive Time  Max Recursion  Max Exclusive Time"};
-							char* txt_header_parents = {"Times Called"};
-							char* txt_header_children = {"Times Called  Exclusive Time Sum  Inclusive Time Sum  Avg. Exclusive Time  Avg. Inclusive Time  Max Recursion  Max Exclusive Time"};
+							char* txt_header = {"Times Called  Exclusive Time Sum  Inclusive Time Sum  Avg. Exclusive Time  Avg. Inclusive Time  Max Recursion  Max Exclusive Time"};
 
 							int number_rows = 0;
 							size_t name_header_length = 0;
@@ -531,23 +529,20 @@ LRESULT CALLBACK WndListViewSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LP
 							{
 								// don't count the null terminator
 								total_length += clipboard_output.Log(nullptr, txt_functions_name_header) - 1;
-								total_length += number_of_spaces_after_header + 2;  // we add 2 spaces after each column
-								total_length += clipboard_output.Log(nullptr, txt_header_functions) - 1;
 							}
 							else if( hWnd == hChildWindowParentFunctions )
 							{
 								// don't count the null terminator
 								total_length += clipboard_output.Log(nullptr, txt_parents_name_header) - 1;
-								total_length += number_of_spaces_after_header + 2;  // we add 2 spaces after each column
-								total_length += clipboard_output.Log(nullptr, txt_header_parents) - 1;
 							}
 							else if( hWnd == hChildWindowChildrenFunctions )
 							{
 								// don't count the null terminator
 								total_length += clipboard_output.Log(nullptr, txt_children_name_header) - 1;
-								total_length += number_of_spaces_after_header + 2;  // we add 2 spaces after each column
-								total_length += clipboard_output.Log(nullptr, txt_header_children) - 1;
 							}
+
+							total_length += number_of_spaces_after_header + 2;  // we add 2 spaces after each column
+							total_length += clipboard_output.Log(nullptr, txt_header) - 1;
 
 							char FormatBuffer[16];
 							int FormatBufferLen = sizeof(FormatBuffer);
@@ -561,56 +556,26 @@ LRESULT CALLBACK WndListViewSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LP
 								{
 									total_length += 1 + max_function_name_length + 2;  // newline plus function name max length plus 2 spaces
 
-									if( hWnd == hChildWindowFunctions )
-									{
-										total_length += clipboard_output.Log(nullptr, "%12d  ", ListView_record->CallCount) - 1;
+									total_length += clipboard_output.Log(nullptr, "%12d  ", ListView_record->CallCount) - 1;
 
-										ConvertTicksToTime(FormatBuffer, FormatBufferLen, ListView_record->CallDurationExclusiveTimeSum);
-										total_length += clipboard_output.Log(nullptr, "%18s  ", FormatBuffer) - 1;
+									ConvertTicksToTime(FormatBuffer, FormatBufferLen, ListView_record->CallDurationExclusiveTimeSum);
+									total_length += clipboard_output.Log(nullptr, "%18s  ", FormatBuffer) - 1;
 
-										ConvertTicksToTime(FormatBuffer, FormatBufferLen, ListView_record->CallDurationInclusiveTimeSum);
-										total_length += clipboard_output.Log(nullptr, "%18s  ", FormatBuffer) - 1;
+									ConvertTicksToTime(FormatBuffer, FormatBufferLen, ListView_record->CallDurationInclusiveTimeSum);
+									total_length += clipboard_output.Log(nullptr, "%18s  ", FormatBuffer) - 1;
 
-										float ExclusiveTimeAvg = (ListView_record->CallCount > 0) ? ((float)ListView_record->CallDurationExclusiveTimeSum / (float)ListView_record->CallCount) : 0.f;
-										ConvertTicksToTime(FormatBuffer, FormatBufferLen, ExclusiveTimeAvg);
-										total_length += clipboard_output.Log(nullptr, "%19s  ", FormatBuffer) - 1;
+									float ExclusiveTimeAvg = (ListView_record->CallCount > 0) ? ((float)ListView_record->CallDurationExclusiveTimeSum / (float)ListView_record->CallCount) : 0.f;
+									ConvertTicksToTime(FormatBuffer, FormatBufferLen, ExclusiveTimeAvg);
+									total_length += clipboard_output.Log(nullptr, "%19s  ", FormatBuffer) - 1;
 
-										float InclusiveTimeAvg = (ListView_record->CallCount > 0) ? ((float)ListView_record->CallDurationInclusiveTimeSum / (float)ListView_record->CallCount) : 0.f;
-										ConvertTicksToTime(FormatBuffer, FormatBufferLen, ExclusiveTimeAvg);
-										total_length += clipboard_output.Log(nullptr, "%19s  ", FormatBuffer) - 1;
+									float InclusiveTimeAvg = (ListView_record->CallCount > 0) ? ((float)ListView_record->CallDurationInclusiveTimeSum / (float)ListView_record->CallCount) : 0.f;
+									ConvertTicksToTime(FormatBuffer, FormatBufferLen, InclusiveTimeAvg);
+									total_length += clipboard_output.Log(nullptr, "%19s  ", FormatBuffer) - 1;
 
-										total_length += clipboard_output.Log(nullptr, "%13d  ", ListView_record->MaxRecursionLevel) - 1;
+									total_length += clipboard_output.Log(nullptr, "%13d  ", ListView_record->MaxRecursionLevel) - 1;
 
-										ConvertTicksToTime(FormatBuffer, FormatBufferLen, ListView_record->MaxCallDurationExclusiveTime);
-										total_length += clipboard_output.Log(nullptr, "%18s", FormatBuffer) - 1;  // no spaces at the end of the last field
-									}
-									else if( hWnd == hChildWindowParentFunctions )
-									{
-										total_length += clipboard_output.Log(nullptr, "%12d", ListView_record->CallCount) - 1;  // no spaces at the end of the last field
-									}
-									else if( hWnd == hChildWindowChildrenFunctions )
-									{
-										total_length += clipboard_output.Log(nullptr, "%12d  ", ListView_record->CallCount) - 1;
-
-										ConvertTicksToTime(FormatBuffer, FormatBufferLen, ListView_record->CallDurationExclusiveTimeSum);
-										total_length += clipboard_output.Log(nullptr, "%18s  ", FormatBuffer) - 1;
-
-										ConvertTicksToTime(FormatBuffer, FormatBufferLen, ListView_record->CallDurationInclusiveTimeSum);
-										total_length += clipboard_output.Log(nullptr, "%18s  ", FormatBuffer) - 1;
-
-										float ExclusiveTimeAvg = (ListView_record->CallCount > 0) ? ((float)ListView_record->CallDurationExclusiveTimeSum / (float)ListView_record->CallCount) : 0.f;
-										ConvertTicksToTime(FormatBuffer, FormatBufferLen, ExclusiveTimeAvg);
-										total_length += clipboard_output.Log(nullptr, "%19s  ", FormatBuffer) - 1;
-
-										float InclusiveTimeAvg = (ListView_record->CallCount > 0) ? ((float)ListView_record->CallDurationInclusiveTimeSum / (float)ListView_record->CallCount) : 0.f;
-										ConvertTicksToTime(FormatBuffer, FormatBufferLen, ExclusiveTimeAvg);
-										total_length += clipboard_output.Log(nullptr, "%19s  ", FormatBuffer) - 1;
-
-										total_length += clipboard_output.Log(nullptr, "%13d  ", ListView_record->MaxRecursionLevel) - 1;
-
-										ConvertTicksToTime(FormatBuffer, FormatBufferLen, ListView_record->MaxCallDurationExclusiveTime);
-										total_length += clipboard_output.Log(nullptr, "%18s", FormatBuffer) - 1;  // no spaces at the end of the last field
-									}
+									ConvertTicksToTime(FormatBuffer, FormatBufferLen, ListView_record->MaxCallDurationExclusiveTime);
+									total_length += clipboard_output.Log(nullptr, "%18s", FormatBuffer) - 1;  // no spaces at the end of the last field
 								}
 							}
 
@@ -631,8 +596,6 @@ LRESULT CALLBACK WndListViewSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LP
 									{
 										Ptr += clipboard_output.Log(Ptr, " ") - 1;
 									}
-									Ptr += clipboard_output.Log(Ptr, "  ") - 1;  // we add 2 spaces after each column
-									Ptr += clipboard_output.Log(Ptr, txt_header_functions) - 1;
 								}
 								else if( hWnd == hChildWindowParentFunctions )
 								{
@@ -642,8 +605,6 @@ LRESULT CALLBACK WndListViewSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LP
 									{
 										Ptr += clipboard_output.Log(Ptr, " ") - 1;
 									}
-									Ptr += clipboard_output.Log(Ptr, "  ") - 1;  // we add 2 spaces after each column
-									Ptr += clipboard_output.Log(Ptr, txt_header_parents) - 1;
 								}
 								else if( hWnd == hChildWindowChildrenFunctions )
 								{
@@ -653,9 +614,10 @@ LRESULT CALLBACK WndListViewSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LP
 									{
 										Ptr += clipboard_output.Log(Ptr, " ") - 1;
 									}
-									Ptr += clipboard_output.Log(Ptr, "  ") - 1;  // we add 2 spaces after each column
-									Ptr += clipboard_output.Log(Ptr, txt_header_children) - 1;
 								}
+
+								Ptr += clipboard_output.Log(Ptr, "  ") - 1;  // we add 2 spaces after each column
+								Ptr += clipboard_output.Log(Ptr, txt_header) - 1;
 
 								// output the data for each row
 								for( int row = 0; row < number_rows; ++row )
@@ -673,56 +635,26 @@ LRESULT CALLBACK WndListViewSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LP
 											Ptr += clipboard_output.Log(Ptr, " ") - 1;
 										}
 
-										if( hWnd == hChildWindowFunctions )
-										{
-											Ptr += clipboard_output.Log(Ptr, "%12d  ", ListView_record->CallCount) - 1;
+										Ptr += clipboard_output.Log(Ptr, "%12d  ", ListView_record->CallCount) - 1;
 
-											ConvertTicksToTime(FormatBuffer, FormatBufferLen, ListView_record->CallDurationExclusiveTimeSum);
-											Ptr += clipboard_output.Log(Ptr, "%18s  ", FormatBuffer) - 1;
+										ConvertTicksToTime(FormatBuffer, FormatBufferLen, ListView_record->CallDurationExclusiveTimeSum);
+										Ptr += clipboard_output.Log(Ptr, "%18s  ", FormatBuffer) - 1;
 
-											ConvertTicksToTime(FormatBuffer, FormatBufferLen, ListView_record->CallDurationInclusiveTimeSum);
-											Ptr += clipboard_output.Log(Ptr, "%18s  ", FormatBuffer) - 1;
+										ConvertTicksToTime(FormatBuffer, FormatBufferLen, ListView_record->CallDurationInclusiveTimeSum);
+										Ptr += clipboard_output.Log(Ptr, "%18s  ", FormatBuffer) - 1;
 
-											float ExclusiveTimeAvg = (ListView_record->CallCount > 0) ? ((float)ListView_record->CallDurationExclusiveTimeSum / (float)ListView_record->CallCount) : 0.f;
-											ConvertTicksToTime(FormatBuffer, FormatBufferLen, ExclusiveTimeAvg);
-											Ptr += clipboard_output.Log(Ptr, "%19s  ", FormatBuffer) - 1;
+										float ExclusiveTimeAvg = (ListView_record->CallCount > 0) ? ((float)ListView_record->CallDurationExclusiveTimeSum / (float)ListView_record->CallCount) : 0.f;
+										ConvertTicksToTime(FormatBuffer, FormatBufferLen, ExclusiveTimeAvg);
+										Ptr += clipboard_output.Log(Ptr, "%19s  ", FormatBuffer) - 1;
 
-											float InclusiveTimeAvg = (ListView_record->CallCount > 0) ? ((float)ListView_record->CallDurationInclusiveTimeSum / (float)ListView_record->CallCount) : 0.f;
-											ConvertTicksToTime(FormatBuffer, FormatBufferLen, ExclusiveTimeAvg);
-											Ptr += clipboard_output.Log(Ptr, "%19s  ", FormatBuffer) - 1;
+										float InclusiveTimeAvg = (ListView_record->CallCount > 0) ? ((float)ListView_record->CallDurationInclusiveTimeSum / (float)ListView_record->CallCount) : 0.f;
+										ConvertTicksToTime(FormatBuffer, FormatBufferLen, InclusiveTimeAvg);
+										Ptr += clipboard_output.Log(Ptr, "%19s  ", FormatBuffer) - 1;
 
-											Ptr += clipboard_output.Log(Ptr, "%13d  ", ListView_record->MaxRecursionLevel) - 1;
+										Ptr += clipboard_output.Log(Ptr, "%13d  ", ListView_record->MaxRecursionLevel) - 1;
 
-											ConvertTicksToTime(FormatBuffer, FormatBufferLen, ListView_record->MaxCallDurationExclusiveTime);
-											Ptr += clipboard_output.Log(Ptr, "%18s", FormatBuffer) - 1;  // no spaces at the end of the last field
-										}
-										else if( hWnd == hChildWindowParentFunctions )
-										{
-											Ptr += clipboard_output.Log(Ptr, "%12d", ListView_record->CallCount) - 1;  // no spaces at the end of the last field
-										}
-										else if( hWnd == hChildWindowChildrenFunctions )
-										{
-											Ptr += clipboard_output.Log(Ptr, "%12d  ", ListView_record->CallCount) - 1;
-
-											ConvertTicksToTime(FormatBuffer, FormatBufferLen, ListView_record->CallDurationExclusiveTimeSum);
-											Ptr += clipboard_output.Log(Ptr, "%18s  ", FormatBuffer) - 1;
-
-											ConvertTicksToTime(FormatBuffer, FormatBufferLen, ListView_record->CallDurationInclusiveTimeSum);
-											Ptr += clipboard_output.Log(Ptr, "%18s  ", FormatBuffer) - 1;
-
-											float ExclusiveTimeAvg = (ListView_record->CallCount > 0) ? ((float)ListView_record->CallDurationExclusiveTimeSum / (float)ListView_record->CallCount) : 0.f;
-											ConvertTicksToTime(FormatBuffer, FormatBufferLen, ExclusiveTimeAvg);
-											Ptr += clipboard_output.Log(Ptr, "%19s  ", FormatBuffer) - 1;
-
-											float InclusiveTimeAvg = (ListView_record->CallCount > 0) ? ((float)ListView_record->CallDurationInclusiveTimeSum / (float)ListView_record->CallCount) : 0.f;
-											ConvertTicksToTime(FormatBuffer, FormatBufferLen, ExclusiveTimeAvg);
-											Ptr += clipboard_output.Log(Ptr, "%19s  ", FormatBuffer) - 1;
-
-											Ptr += clipboard_output.Log(Ptr, "%13d  ", ListView_record->MaxRecursionLevel) - 1;
-
-											ConvertTicksToTime(FormatBuffer, FormatBufferLen, ListView_record->MaxCallDurationExclusiveTime);
-											Ptr += clipboard_output.Log(Ptr, "%18s", FormatBuffer) - 1;  // no spaces at the end of the last field
-										}
+										ConvertTicksToTime(FormatBuffer, FormatBufferLen, ListView_record->MaxCallDurationExclusiveTime);
+										Ptr += clipboard_output.Log(Ptr, "%18s", FormatBuffer) - 1;  // no spaces at the end of the last field
 									}
 								}
 
@@ -750,13 +682,11 @@ LRESULT CALLBACK WndListViewSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LP
 							size_t total_length = 0;
 
 							char* csv_header_functions = {"\"Function\",\"Times Called\",\"Exclusive Time Sum (usec)\",\"Inclusive Time Sum (usec)\",\"Avg. Exclusive Time (usec)\",\"Avg. Inclusive Time (usec)\",\"Max Recursion\",\"Max Exclusive Time (usec)\""};
-							char* csv_header_parents = {"\"Parents\",\"Times Called\""};
+							char* csv_header_parents = {"\"Parents\",\"Times Called\",\"Exclusive Time Sum (usec)\",\"Inclusive Time Sum (usec)\",\"Avg. Exclusive Time (usec)\",\"Avg. Inclusive Time (usec)\",\"Max Recursion\",\"Max Exclusive Time (usec)\""};
 							char* csv_header_children = {"\"Children\",\"Times Called\",\"Exclusive Time Sum (usec)\",\"Inclusive Time Sum (usec)\",\"Avg. Exclusive Time (usec)\",\"Avg. Inclusive Time (usec)\",\"Max Recursion\",\"Max Exclusive Time (usec)\""};
 
 							// these are the format text for the Log() call to output the call tree record data as CSV
-							char* csv_line_functions = {"\n\"%s\",%d,%I64d,%I64d,%I64d,%I64d,%d,%I64d"};
-							char* csv_line_parents = {"\n\"%s\",%d"};
-							char* csv_line_children = {"\n\"%s\",%d,%I64d,%I64d,%I64d,%I64d,%d,%I64d"};
+							char* csv_line = {"\n\"%s\",%d,%I64d,%I64d,%I64d,%I64d,%d,%I64d"};
 
 							int number_rows = 0;
 
@@ -796,42 +726,18 @@ LRESULT CALLBACK WndListViewSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LP
 
 								if( ListView_record )
 								{
-									if( hWnd == hChildWindowFunctions )
-									{
-										long long ExclusiveTimeAvg = (ListView_record->CallCount > 0) ? (ListView_record->CallDurationExclusiveTimeSum / (ListView_record->CallCount * 10)) : 0;
-										long long InclusiveTimeAvg = (ListView_record->CallCount > 0) ? (ListView_record->CallDurationInclusiveTimeSum / (ListView_record->CallCount * 10)) : 0;
+									long long ExclusiveTimeAvg = (ListView_record->CallCount > 0) ? (ListView_record->CallDurationExclusiveTimeSum / (ListView_record->CallCount * 10)) : 0;
+									long long InclusiveTimeAvg = (ListView_record->CallCount > 0) ? (ListView_record->CallDurationInclusiveTimeSum / (ListView_record->CallCount * 10)) : 0;
 
-										total_length += clipboard_output.Log(nullptr, csv_line_functions,
-																				ListView_record->SymbolName,
-																				ListView_record->CallCount,
-																				ListView_record->CallDurationExclusiveTimeSum / 10,
-																				ListView_record->CallDurationInclusiveTimeSum / 10,
-																				ExclusiveTimeAvg,
-																				InclusiveTimeAvg,
-																				ListView_record->MaxRecursionLevel,
-																				ListView_record->MaxCallDurationExclusiveTime / 10) - 1;  // don't count the null terminator
-									}
-									else if( hWnd == hChildWindowParentFunctions )
-									{
-										total_length += clipboard_output.Log(nullptr, csv_line_parents,
-																				ListView_record->SymbolName,
-																				ListView_record->CallCount) - 1;  // don't count the null terminator
-									}
-									else if( hWnd == hChildWindowChildrenFunctions )
-									{
-										long long ExclusiveTimeAvg = (ListView_record->CallCount > 0) ? (ListView_record->CallDurationExclusiveTimeSum / (ListView_record->CallCount * 10)) : 0;
-										long long InclusiveTimeAvg = (ListView_record->CallCount > 0) ? (ListView_record->CallDurationInclusiveTimeSum / (ListView_record->CallCount * 10)) : 0;
-
-										total_length += clipboard_output.Log(nullptr, csv_line_children,
-																				ListView_record->SymbolName,
-																				ListView_record->CallCount,
-																				ListView_record->CallDurationExclusiveTimeSum / 10,
-																				ListView_record->CallDurationInclusiveTimeSum / 10,
-																				ExclusiveTimeAvg,
-																				InclusiveTimeAvg,
-																				ListView_record->MaxRecursionLevel,
-																				ListView_record->MaxCallDurationExclusiveTime / 10) - 1;  // don't count the null terminator
-									}
+									total_length += clipboard_output.Log(nullptr, csv_line,
+																			ListView_record->SymbolName,
+																			ListView_record->CallCount,
+																			ListView_record->CallDurationExclusiveTimeSum / 10,
+																			ListView_record->CallDurationInclusiveTimeSum / 10,
+																			ExclusiveTimeAvg,
+																			InclusiveTimeAvg,
+																			ListView_record->MaxRecursionLevel,
+																			ListView_record->MaxCallDurationExclusiveTime / 10) - 1;  // don't count the null terminator
 								}
 							}
 
@@ -864,42 +770,18 @@ LRESULT CALLBACK WndListViewSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LP
 
 									if( ListView_record )
 									{
-										if( hWnd == hChildWindowFunctions )
-										{
-											long long ExclusiveTimeAvg = (ListView_record->CallCount > 0) ? (ListView_record->CallDurationExclusiveTimeSum / (ListView_record->CallCount * 10)) : 0;
-											long long InclusiveTimeAvg = (ListView_record->CallCount > 0) ? (ListView_record->CallDurationInclusiveTimeSum / (ListView_record->CallCount * 10)) : 0;
+										long long ExclusiveTimeAvg = (ListView_record->CallCount > 0) ? (ListView_record->CallDurationExclusiveTimeSum / (ListView_record->CallCount * 10)) : 0;
+										long long InclusiveTimeAvg = (ListView_record->CallCount > 0) ? (ListView_record->CallDurationInclusiveTimeSum / (ListView_record->CallCount * 10)) : 0;
 
-											Ptr += clipboard_output.Log(Ptr, csv_line_functions,
-																					ListView_record->SymbolName,
-																					ListView_record->CallCount,
-																					ListView_record->CallDurationExclusiveTimeSum / 10,
-																					ListView_record->CallDurationInclusiveTimeSum / 10,
-																					ExclusiveTimeAvg,
-																					InclusiveTimeAvg,
-																					ListView_record->MaxRecursionLevel,
-																					ListView_record->MaxCallDurationExclusiveTime / 10) - 1;  // don't count the null terminator
-										}
-										else if( hWnd == hChildWindowParentFunctions )
-										{
-											Ptr += clipboard_output.Log(Ptr, csv_line_parents,
-																					ListView_record->SymbolName,
-																					ListView_record->CallCount) - 1;  // don't count the null terminator
-										}
-										else if( hWnd == hChildWindowChildrenFunctions )
-										{
-											long long ExclusiveTimeAvg = (ListView_record->CallCount > 0) ? (ListView_record->CallDurationExclusiveTimeSum / (ListView_record->CallCount * 10)) : 0;
-											long long InclusiveTimeAvg = (ListView_record->CallCount > 0) ? (ListView_record->CallDurationInclusiveTimeSum / (ListView_record->CallCount * 10)) : 0;
-
-											Ptr += clipboard_output.Log(Ptr, csv_line_children,
-																					ListView_record->SymbolName,
-																					ListView_record->CallCount,
-																					ListView_record->CallDurationExclusiveTimeSum / 10,
-																					ListView_record->CallDurationInclusiveTimeSum / 10,
-																					ExclusiveTimeAvg,
-																					InclusiveTimeAvg,
-																					ListView_record->MaxRecursionLevel,
-																					ListView_record->MaxCallDurationExclusiveTime / 10) - 1;  // don't count the null terminator
-										}
+										Ptr += clipboard_output.Log(Ptr, csv_line,
+																				ListView_record->SymbolName,
+																				ListView_record->CallCount,
+																				ListView_record->CallDurationExclusiveTimeSum / 10,
+																				ListView_record->CallDurationInclusiveTimeSum / 10,
+																				ExclusiveTimeAvg,
+																				InclusiveTimeAvg,
+																				ListView_record->MaxRecursionLevel,
+																				ListView_record->MaxCallDurationExclusiveTime / 10) - 1;  // don't count the null terminator
 									}
 								}
 
