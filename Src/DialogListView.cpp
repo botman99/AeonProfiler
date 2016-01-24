@@ -6,6 +6,7 @@
 // Windows Header Files:
 #include <Windows.h>
 #include <Commctrl.h>
+#include <unordered_map>
 
 #include "Dialog.h"
 #include "TextViewer.h"
@@ -1187,25 +1188,48 @@ void ListViewSetRowSelected(HWND hWnd, int row, DialogThreadIdRecord_t* ListView
 					if( ListView_CallTreeRecord )
 					{
 						int LineNumber;
-						static int TextViewerLineNumber = -1;  // save this so we don't reload and re-display the text file when clicking on the same row more than once
 						char FileName[MAX_PATH];
 
 						GetSourceCodeLineFromAddress((DWORD64)ListView_CallTreeRecord->Address, LineNumber, FileName, MAX_PATH);
 
 						extern char TextViewerFileName[];
-						if( (_stricmp(FileName, TextViewerFileName) != 0) || (LineNumber != TextViewerLineNumber) )
+						extern TCHAR* TextViewerBuffer;
+						extern int TextViewBuffer_TotalSize;
+						extern std::unordered_map<int, int> LineNumberToBufferPositionMap;
+
+						if( _stricmp(FileName, TextViewerFileName) != 0 )
 						{
 							LoadTextFile(FileName);
 
-							extern TextLineBuffer line_buffer;
-							line_buffer.current_line_index = LineNumber;
+							int text_length = GetWindowTextLength(hChildWindowTextViewer);
+							SendMessage(hChildWindowTextViewer, EM_SETSEL, 0, text_length);
 
-							TextViewerLineNumber = LineNumber;
+							SendMessage(hChildWindowTextViewer, EM_SETLIMITTEXT, TextViewBuffer_TotalSize, 0);
 
-							SendMessage(hChildWindowTextViewer, WM_SETSCROLLPOSITION, 0, 0);
-
-							InvalidateRect(hChildWindowTextViewer, NULL, FALSE);
+							SendMessage(hChildWindowTextViewer, EM_REPLACESEL, 0, (LPARAM)TextViewerBuffer);  // replace the Edit control text with the source code file text
 						}
+
+						SetFocus(hChildWindowTextViewer);
+
+						auto offset_it = LineNumberToBufferPositionMap.find(LineNumber - 3);  // offset the line number down slightly in the text window
+						if( offset_it != LineNumberToBufferPositionMap.end() )
+						{
+							SendMessage(hChildWindowTextViewer, EM_SETSEL, offset_it->second, offset_it->second);
+						}
+						else
+						{
+							SendMessage(hChildWindowTextViewer, EM_SETSEL, 0, 0);
+						}
+
+						SendMessage(hChildWindowTextViewer, EM_SCROLLCARET, 0, 0);
+
+						offset_it = LineNumberToBufferPositionMap.find(LineNumber - 1);  // now set the cursor to the line number of the symbol
+						if( offset_it != LineNumberToBufferPositionMap.end() )
+						{
+							SendMessage(hChildWindowTextViewer, EM_SETSEL, offset_it->second, offset_it->second);
+							SendMessage(hChildWindowTextViewer, EM_SCROLLCARET, 0, 0);
+						}
+
 
 						ListViewRowSelectedFunctions = row;  // remember which row was selected
 

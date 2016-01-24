@@ -203,8 +203,7 @@ LRESULT CALLBACK CSplitter::StaticWndProc(HWND hwnd, UINT msg, WPARAM wParam, LP
 	{
 		CreateSplitterWindow->m_hwnd_Splitter = hwnd;
 
-		std::pair<HWND, CSplitter*> splitter_pair(hwnd, CreateSplitterWindow);
-		SplitterWindowMap.insert(splitter_pair);
+		SplitterWindowMap.emplace(hwnd, CreateSplitterWindow);
 
 		LRESULT result = CreateSplitterWindow->m_wndproc(hwnd, msg, wParam, lParam);
 

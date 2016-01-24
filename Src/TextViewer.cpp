@@ -1,99 +1,91 @@
 
 #include "windows.h"
+#include <unordered_map>
+
 #include "Allocator.h"
 #include "TextViewer.h"
 
 CAllocator TextViewerAllocator;
-TextLineBuffer line_buffer = { nullptr, 0, 0, 0 };
 
-char* TextViewer_FileBuffer = nullptr;
 char TextViewerFileName[MAX_PATH] = {""};  // the most recent file loaded into the text viewer
 
+TCHAR* TextViewerBuffer = nullptr;  // the unicode text buffer to display in the source code text window
+int TextViewBuffer_TotalSize = 0;
 
-void InitializeTextLineBuffer(char* buffer, int length)
+std::unordered_map<int, int> LineNumberToBufferPositionMap;
+
+
+int GetSizeOfTextBufferInUnicode(char* buffer, int buffer_length)
 {
-	char* p = buffer;
-	int char_count = 0;
-	int line_count = 0;
-	TextLineNode* first_node = nullptr;
-	TextLineNode* previous_node = nullptr;
+	int total_size = 0;
+	int count = 0;
 
-	int line_length = 0;
-	int max_line_length = 0;  // we need to keep track of the length of the longest line so we know how wide to make the horizontal scroll bar
+	const char* p = buffer;
 
-	while( p && (char_count < length) )
+	while( *p && count < buffer_length )
 	{
-		TextLineNode* node = (TextLineNode*)TextViewerAllocator.AllocateBytes(sizeof(TextLineNode), sizeof(void*));
-
-		node->text = p;  // point to the start of the line of text
-		node->next = nullptr;
-
-		if( first_node == nullptr )
+		if( *p == '\n' )
 		{
-			first_node = node;
+			total_size += 4;  // this will get converted to carriage return and line feed
+		}
+		else if( *p != '\r' )
+		{
+			total_size += 2;  // 2 bytes per unicode character
 		}
 
-		while( p && (*p != '\n') )
+		count++;
+		p++;
+	}
+
+	return total_size;
+}
+
+void ConvertTextFileBufferToUnicode(char* buffer, int buffer_length, TCHAR* tchar_buffer)
+{
+	int count = 0;
+	int offset = 0;  // character offset into unichar buffer
+	int line_number = 1;
+	bool bIsStartOfLine = true;
+
+	const char* p = buffer;
+	TCHAR* tchar_p = tchar_buffer;
+
+	while( *p && count < buffer_length )
+	{
+		if( bIsStartOfLine )
 		{
-			char_count++;
-
-			if( *p == '\r' )
-			{
-				*p = 0;  // replace carriage return with null terminator for the text line
-			}
-			else
-			{
-				line_length++;  // we don't include carriage return characters as part of the line length
-				if( *p == '\t')
-				{
-					while( line_length % 4 )
-					{
-						line_length++;
-					}
-				}
-			}
-
-			p++;
-
-			if( char_count == length )
-			{
-				break;
-			}
+			LineNumberToBufferPositionMap.emplace(line_number, offset);
+			bIsStartOfLine = false;
 		}
 
 		if( *p == '\n' )
 		{
-			*p = 0;  // replace newline with null terminator for the text line
-			char_count++;
-			p++;
+			*tchar_p++ = TCHAR('\r');
+			*tchar_p++ = TCHAR('\n');
+			offset += 2;
+			line_number++;
+			bIsStartOfLine = true;
 		}
-
-		if( line_length > max_line_length )
+		else if( *p != '\r' )
 		{
-			max_line_length = line_length;
+			*tchar_p++ = TCHAR(*p);
+			offset += 1;
 		}
 
-		if( previous_node )
-		{
-			previous_node->next = node;
-		}
-
-		previous_node = node;
-		line_count++;
-		line_length = 0;
+		count++;
+		p++;
 	}
+}
 
-	line_buffer.num_lines = line_count;
-	line_buffer.max_line_length = max_line_length;
+void InitializeTextLineBuffer(char* buffer, int buffer_length)
+{
+	LineNumberToBufferPositionMap.clear();
 
-	line_buffer.linenode = (TextLineNode**)TextViewerAllocator.AllocateBytes(line_count * sizeof(TextLineNode*), sizeof(void*));
+	TextViewBuffer_TotalSize = GetSizeOfTextBufferInUnicode(buffer, buffer_length) + 2;  // plus 2 for null at the end
 
-	TextLineNode* line_node = first_node;
-	for( int i = 0; i < line_buffer.num_lines; i++ )
-	{
-		line_buffer.linenode[i] = line_node;
-		line_node = line_node->next;
-	}
+	TextViewerBuffer = (TCHAR*)TextViewerAllocator.AllocateBytes(TextViewBuffer_TotalSize, sizeof(void*));
+
+	ConvertTextFileBufferToUnicode(buffer, buffer_length, TextViewerBuffer);
 }
 
 void LoadTextFile(char* filename)
@@ -103,6 +95,8 @@ void LoadTextFile(char* filename)
 	TextViewerAllocator.FreeBlocks();  // free all the memory allocated by the TextViewerAllocator
 
 	strncpy_s(TextViewerFileName, filename, MAX_PATH);
+
+	char* TextViewer_FileBuffer = nullptr;
 
 	size_t wNumChars = 0;
 	WCHAR wFilename[MAX_PATH];

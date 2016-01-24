@@ -52,7 +52,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow);
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 LRESULT CALLBACK WndProcLeftChildren(HWND, UINT, WPARAM, LPARAM);
 LRESULT CALLBACK WndProcRightChildren(HWND, UINT, WPARAM, LPARAM);
-LRESULT CALLBACK WndProcTextViewer(HWND, UINT, WPARAM, LPARAM);
+LRESULT CALLBACK WndEditSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData);
 
 
 void WINAPI DialogThread(LPVOID lpData)
@@ -287,39 +287,21 @@ LRESULT CALLBACK WndProcLeftChildren(HWND hWnd, UINT message, WPARAM wParam, LPA
 				WS_CHILD  | WS_BORDER | WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_ALIGNLEFT | LVS_OWNERDATA,
 				0, 0, 0, 0, hWnd, NULL, hInst, NULL );
 
-			WNDCLASSEX	wcex;
-
-			//Window class for the main application parent window
-			wcex.cbSize			= sizeof(wcex);
-			wcex.style			= 0;
-			wcex.lpfnWndProc	= WndProcTextViewer;
-			wcex.cbClsExtra		= 0;
-			wcex.cbWndExtra		= 0;
-			wcex.hInstance		= hInst;
-			wcex.hIcon			= 0;
-			wcex.hCursor		= LoadCursor (NULL, IDC_IBEAM);
-			wcex.hbrBackground	= (HBRUSH)(COLOR_WINDOW+1);
-			wcex.lpszMenuName	= 0;
-			wcex.lpszClassName	= TEXT("TextViewer");	
-			wcex.hIconSm		= 0;
-
-			if( RegisterClassEx(&wcex) == 0 )
-			{
-				DWORD err = GetLastError();
-				DebugLog("WndProcLeftChildren(): RegisterClassEx() failed - err = %d", err);
-				return 0;
-			}
-
-			hChildWindowTextViewer = CreateWindowEx(WS_EX_CLIENTEDGE, TEXT("TextViewer"), TEXT(""), 
-				ES_AUTOVSCROLL | ES_AUTOHSCROLL | WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 0, 0, 0, 0, 
+			hChildWindowTextViewer = CreateWindowEx(WS_EX_CLIENTEDGE, TEXT("EDIT"), TEXT(""), 
+				WS_VSCROLL | ES_AUTOVSCROLL | WS_HSCROLL | ES_AUTOHSCROLL | WS_CHILD | WS_VISIBLE | ES_MULTILINE | WS_CLIPCHILDREN, 0, 0, 0, 0, 
 				hWnd, 0, hInst, 0);
 
-			if( hChildWindowTextViewer == NULL )
+			// subclass the EDIT control so that we can intercept keystrokes (to make the EDIT control "read only")
+			// https://msdn.microsoft.com/en-us/library/bb773183%28VS.85%29.aspx
+			if( !SetWindowSubclass(hChildWindowTextViewer, WndEditSubclassProc, 0, 0) )
 			{
 				DWORD err = GetLastError();
-				DebugLog("WndProcLeftChildren(): CreateWindowEx() failed - err = %d", err);
+				DebugLog("WndProcLeftChildren(): SetWindowSubclass() failed - err = %d", err);
 				return 0;
 			}
+
+			HFONT hFont = CreateFont(14, 0, 0, 0, 0, FALSE, FALSE, FALSE, 0, 0, 0, 0, FIXED_PITCH, TEXT("Courier"));
+			SendMessage(hChildWindowTextViewer, WM_SETFONT, (WPARAM)hFont, MAKELPARAM(TRUE, 0));
 
 			return 0;
 		}
@@ -379,384 +361,22 @@ LRESULT CALLBACK WndProcRightChildren(HWND hWnd, UINT message, WPARAM wParam, LP
 	return DefWindowProc(hWnd, message, wParam, lParam);
 }
 
-LRESULT CALLBACK WndProcTextViewer(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+LRESULT CALLBACK WndEditSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData)
 {
-	//
-	// See: https://msdn.microsoft.com/en-us/library/hh298421%28v=vs.85%29.aspx
-	//
-	HDC hdc;
-	TEXTMETRIC tm;
-
-	HANDLE hOldFont;
-	HFONT hFont;
-
-	static int xChar;       // horizontal scrolling unit
-	static int yChar;       // vertical scrolling unit
-	static int xUpper;      // average width of uppercase letters
-
-	static int xPos;        // current horizontal scrolling position
-	static int yPos;        // current vertical scrolling position
-
-	static int last_vertical_size;
-	static int last_horizontal_size;
-
-	switch(message)
+	switch (uMsg)
 	{
-		case WM_CREATE:
-		{
-			hdc = GetDC(hWnd);
+		case WM_RBUTTONDOWN:
+			return 0;  // we don't want the right click menu (since it allows things like "Paste")
 
-			hFont = (HFONT)GetStockObject(ANSI_FIXED_FONT);
-			hOldFont = SelectObject(hdc, hFont);
-
-			GetTextMetrics(hdc, &tm);
-
-			xChar = tm.tmAveCharWidth; 
-			xUpper = (tm.tmPitchAndFamily & 1 ? 3 : 2) * xChar/2;
-			yChar = tm.tmHeight + tm.tmExternalLeading; 
-
-			SelectObject(hdc, hOldFont);
-
-			ReleaseDC(hWnd, hdc); 
-
-			break;
-		}
-
-		case WM_SIZE:
-		{
-			SCROLLINFO si;
-
-			last_vertical_size = HIWORD(lParam);
-			last_horizontal_size = LOWORD(lParam);
-
-			memset(&si, 0, sizeof(si));
-			si.cbSize = sizeof(si);
-			si.fMask  = SIF_RANGE | SIF_PAGE | SIF_POS;
-			si.fMask  = SIF_RANGE | SIF_PAGE | SIF_POS;
-			si.nMin   = 0;
-			si.nMax   = line_buffer.num_lines - 1;
-			si.nPage  = last_vertical_size / yChar;
-
-			si.nPos = max(line_buffer.current_line_index - (si.nPage / 2) - 1, 0);  // center the desired line at the middle of the window
-
-			SetScrollInfo(hWnd, SB_VERT, &si, TRUE);
-
-			memset(&si, 0, sizeof(si));
-			si.cbSize = sizeof(si);
-			si.fMask  = SIF_RANGE | SIF_PAGE;
-			si.nMin   = 0;
-			si.nMax   = line_buffer.max_line_length;
-			si.nPage  = last_horizontal_size / xChar;
-			SetScrollInfo(hWnd, SB_HORZ, &si, TRUE);
-
-			break;
-		}
-
-		case WM_SETSCROLLPOSITION:
-		{
-			SCROLLINFO si;
-
-			memset(&si, 0, sizeof(si));
-			si.cbSize = sizeof(si);
-			si.fMask  = SIF_RANGE | SIF_PAGE | SIF_POS;
-			si.fMask  = SIF_RANGE | SIF_PAGE | SIF_POS;
-			si.nMin   = 0;
-			si.nMax   = line_buffer.num_lines - 1;
-			si.nPage  = last_vertical_size / yChar;
-
-			si.nPos = max(line_buffer.current_line_index - (si.nPage / 2) - 1, 0);  // center the desired line at the middle of the window
-
-			SetScrollInfo(hWnd, SB_VERT, &si, TRUE);
-
-			memset(&si, 0, sizeof(si));
-			si.cbSize = sizeof(si);
-			si.fMask  = SIF_RANGE | SIF_PAGE;
-			si.nMin   = 0;
-			si.nMax   = line_buffer.max_line_length;
-			si.nPage  = last_horizontal_size / xChar;
-			SetScrollInfo(hWnd, SB_HORZ, &si, TRUE);
-
-			break;
-		}
-
-		case WM_MOUSEACTIVATE:
-		{
-			SetFocus(hWnd);
-			return MA_ACTIVATE;
-		}
-
-		case WM_SETFOCUS:
-		{
-			DWORD nWidth = 2;
- 
-			SystemParametersInfo(SPI_GETCARETWIDTH, 0, &nWidth, 0);
-			CreateCaret(hWnd, (HBITMAP)NULL, nWidth, yChar);
- 
-			ShowCaret(hWnd);
-
-			break;
-		}
-
-		case WM_KILLFOCUS:
-		{
-			HideCaret(hWnd);
-			DestroyCaret();
-
-			break;
-		}
-
-		case WM_LBUTTONDOWN:
-		{
-			int xPos = GET_X_LPARAM(lParam); 
-			int yPos = GET_Y_LPARAM(lParam); 
-
-			xPos += 2;  // add the width of the cursor
-
-			xPos = (xPos / xChar) * xChar;
-			yPos = (yPos / yChar) * yChar;
-
-			SetCaretPos(xPos, yPos);
-
-			break;
-		}
-
-		case WM_HSCROLL:
-		{
-			SCROLLINFO si;
-
-			// Get all the horizontal scroll bar information.
-			si.cbSize = sizeof (si);
-			si.fMask  = SIF_ALL;
-
-			// Save the position for comparison later on.
-			GetScrollInfo (hWnd, SB_HORZ, &si);
-			xPos = si.nPos;
-
-			switch (LOWORD (wParam))
+		case WM_CHAR:
+			if( wParam == 0x03 )  // allow Ctrl-C to copy text
 			{
-				// User clicked the left arrow.
-				case SB_LINELEFT: 
-					si.nPos -= 1;
-					break;
-
-				// User clicked the right arrow.
-				case SB_LINERIGHT: 
-					si.nPos += 1;
-					break;
-
-				// User clicked the scroll bar shaft left of the scroll box.
-				case SB_PAGELEFT:
-					si.nPos -= si.nPage;
-					break;
-
-				// User clicked the scroll bar shaft right of the scroll box.
-				case SB_PAGERIGHT:
-					si.nPos += si.nPage;
-					break;
-
-				// User dragged the scroll box.
-				case SB_THUMBTRACK: 
-					si.nPos = si.nTrackPos;
-					break;
-
-				default :
-					break;
+				return DefSubclassProc(hWnd, uMsg, wParam, lParam);
 			}
-
-			// Set the position and then retrieve it.  Due to adjustments
-			// by Windows it may not be the same as the value set.
-			si.fMask = SIF_POS;
-			SetScrollInfo (hWnd, SB_HORZ, &si, TRUE);
-			GetScrollInfo (hWnd, SB_HORZ, &si);
-
-			// If the position has changed, scroll the window.
-			if (si.nPos != xPos)
-			{
-				ScrollWindow(hWnd, xChar * (xPos - si.nPos), 0, NULL, NULL);
-			}
-
-			break;
-		}
-
-		case WM_VSCROLL:
-		{
-			SCROLLINFO si;
-
-			// Get all the vertical scroll bar information.
-			si.cbSize = sizeof (si);
-			si.fMask  = SIF_ALL;
-			GetScrollInfo (hWnd, SB_VERT, &si);
-
-			// Save the position for comparison later on.
-			yPos = si.nPos;
-
-			switch (LOWORD (wParam))
-			{
-				// User clicked the HOME keyboard key.
-				case SB_TOP:
-					si.nPos = si.nMin;
-					break;
-
-				// User clicked the END keyboard key.
-				case SB_BOTTOM:
-					si.nPos = si.nMax;
-					break;
-
-				// User clicked the up arrow.
-				case SB_LINEUP:
-					si.nPos -= 1;
-					break;
-
-				// User clicked the down arrow.
-				case SB_LINEDOWN:
-					si.nPos += 1;
-					break;
-
-				// User clicked the scroll bar shaft above the scroll box.
-				case SB_PAGEUP:
-					si.nPos -= si.nPage;
-					break;
-
-				// User clicked the scroll bar shaft below the scroll box.
-				case SB_PAGEDOWN:
-					si.nPos += si.nPage;
-					break;
-
-				// User dragged the scroll box.
-				case SB_THUMBTRACK:
-					si.nPos = si.nTrackPos;
-					break;
-
-				default:
-					break;
-			}
-
-			// Set the position and then retrieve it.  Due to adjustments
-			// by Windows it may not be the same as the value set.
-			si.fMask = SIF_POS;
-			SetScrollInfo (hWnd, SB_VERT, &si, TRUE);
-			GetScrollInfo (hWnd, SB_VERT, &si);
-
-			// If the position has changed, scroll window and update it.
-			if (si.nPos != yPos)
-			{                    
-				ScrollWindow(hWnd, 0, yChar * (yPos - si.nPos), NULL, NULL);
-				UpdateWindow(hWnd);
-			}
-
-			break;
-		}
-
-		case WM_MOUSEWHEEL:
-		{
-			short delta = HIWORD(wParam);
-
-			SCROLLINFO si;
-
-			// Get all the vertical scroll bar information.
-			si.cbSize = sizeof (si);
-			si.fMask  = SIF_ALL;
-			GetScrollInfo (hWnd, SB_VERT, &si);
-
-			// Save the position for comparison later on.
-			yPos = si.nPos;
-
-			si.nPos += delta < 0 ? 3 : -3;
-
-			// Set the position and then retrieve it.  Due to adjustments
-			// by Windows it may not be the same as the value set.
-			si.fMask = SIF_POS;
-			SetScrollInfo (hWnd, SB_VERT, &si, TRUE);
-			GetScrollInfo (hWnd, SB_VERT, &si);
-
-			// If the position has changed, scroll window and update it.
-			if (si.nPos != yPos)
-			{                    
-				ScrollWindow(hWnd, 0, yChar * (yPos - si.nPos), NULL, NULL);
-				UpdateWindow(hWnd);
-			}
-
-			break;
-		}
-
-		case WM_PAINT:
-		{
-			HDC			hdc;
-			SCROLLINFO	si;
-			PAINTSTRUCT ps;
-
-			hdc = BeginPaint(hWnd, &ps);
-
-			FillRect(hdc, &ps.rcPaint, (HBRUSH)(COLOR_WINDOW+1));
-
-			hFont = (HFONT)GetStockObject(ANSI_FIXED_FONT);
-			hOldFont = SelectObject(hdc, hFont);
-
-			// Get vertical scroll bar position.
-			si.cbSize = sizeof (si);
-			si.fMask  = SIF_POS;
-			GetScrollInfo(hWnd, SB_VERT, &si);
-			yPos = si.nPos;
-
-			// Get horizontal scroll bar position.
-			GetScrollInfo(hWnd, SB_HORZ, &si);
-			xPos = si.nPos;
-
-			// Find painting limits.
-			int FirstLine = max(0, yPos + ps.rcPaint.top / yChar);
-			int LastLine = min(line_buffer.num_lines - 1, yPos + ps.rcPaint.bottom / yChar);
-
-			for (int i = FirstLine; i <= LastLine; i++)
-			{
-				int x = xChar * -xPos;
-				int y = yChar * (i - yPos);
-
-				TextLineNode* linenode = line_buffer.linenode[i];
-
-				size_t wNumChars = 0;
-				WCHAR wText[2048];
-				memset(wText, 0, sizeof(wText));
-
-				char* p = linenode->text;
-				while( *p )
-				{
-					if( *p == '\t' )
-					{
-						wText[wNumChars++] = ' ';
-						while( wNumChars % 4 )
-						{
-							wText[wNumChars++] = ' ';
-						}
-					}
-					else if( *p < ' ' )
-					{
-					}
-					else
-					{
-						wText[wNumChars++] = *p;
-					}
-
-					p++;
-				}
-
-				wText[wNumChars++] = 0;
-
-				// Write a line of text to the client area.
-				TextOut(hdc, x, y, wText, (int)wNumChars); 
-			}
-
-			SelectObject(hdc, hOldFont);
-
-			EndPaint(hWnd, &ps);
-
-			break;
-		}
-
-	default:
-		return DefWindowProc(hWnd, message, wParam, lParam);
+			return 0;  // don't allow any other keystroke
 	}
 
-	return 0;
+	return DefSubclassProc(hWnd, uMsg, wParam, lParam);
 }
 
 BOOL CenterWindow (HWND hWnd)

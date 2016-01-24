@@ -443,11 +443,15 @@ void DisplayCallTreeData()
 		InvalidateRect(hChildWindowParentFunctions, NULL, FALSE);
 		InvalidateRect(hChildWindowChildrenFunctions, NULL, FALSE);
 
-		extern TextLineBuffer line_buffer;
-		line_buffer.num_lines = 0;
+		int text_length = GetWindowTextLength(hChildWindowTextViewer);
+		SendMessage(hChildWindowTextViewer, EM_SETSEL, 0, text_length);
 
-		SendMessage(hChildWindowTextViewer, WM_SETSCROLLPOSITION, 0, 0);
-		InvalidateRect(hChildWindowTextViewer, NULL, FALSE);
+		SendMessage(hChildWindowTextViewer, EM_SETLIMITTEXT, 1, 0);
+
+		SendMessage(hChildWindowTextViewer, EM_REPLACESEL, 0, (LPARAM)TEXT(""));
+
+		SendMessage(hChildWindowTextViewer, EM_SETSEL, 0, 0);
+		SendMessage(hChildWindowTextViewer, EM_SCROLLCARET, 0, 0);
 
 		// ...and select the topmost item by default (for the middle child window)
 		ListViewSetRowSelected(hChildWindowFunctions, 0, nullptr, false);

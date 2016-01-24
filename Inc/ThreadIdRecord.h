@@ -96,7 +96,6 @@ public:
 		if( CallStack.pTop )  // copy the thread's Stack
 		{
 			pRec->StackArray = CallStack.CopyStackToArray(InCopyAllocator, pRec->StackArraySize);
-
 			pRec->Address = pRec->StackArray[0].CallerAddress;
 		}
 		else

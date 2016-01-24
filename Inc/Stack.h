@@ -140,7 +140,7 @@ public:
 	void ResetCounters(DWORD64 TimeNow)
 	{
 		int index = 0;
-		Stack_t* pNode = pTop;  // base of array is the bottom of the stack
+		Stack_t* pNode = pTop;
 
 		while( pNode && (index < StackSize) )
 		{
