@@ -24,6 +24,7 @@ enum ConfigValueId  // this is the list of the known configuration settings
 	CONFIG_MIDDLE_SPLITTER_PERCENT,
 	CONFIG_LEFT_SPLITTER_PERCENT,
 	CONFIG_RIGHT_SPLITTER_PERCENT,
+	CONFIG_FIND_FUNCTION_CASE_SENSITIVE,
 };
 
 struct ConfigValueStruct

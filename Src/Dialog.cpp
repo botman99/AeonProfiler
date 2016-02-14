@@ -6,6 +6,7 @@
 #include <Commctrl.h>
 #include <windowsx.h>
 #include <TlHelp32.h>
+#include <Shlwapi.h>
 
 #include "Splitter.h"
 #include "Dialog.h"
@@ -41,6 +42,7 @@ HWND hChildWindowTextViewer;
 HWND ghWnd;  // global hWnd for application window (so we can set the window text in the titlebar)
 HWND ghDialogWnd;  // global hWnd for the main dialog
 HWND ghLookupSymbolsModalDialogWnd;  // global hWnd for the 'LookupSymbols' dialog
+HWND ghFindSymbolDialogParent;  // global hWnd for the ListView used to call FindSymbolModalDialog() since WS_POPUP windows won't have the proper Parent set
 
 HANDLE ProcessCallTreeDataThreadHandle = NULL;
 DWORD ProcessCallTreeDataThreadID = 0;
@@ -307,22 +309,6 @@ LRESULT CALLBACK WndProcLeftChildren(HWND hWnd, UINT message, WPARAM wParam, LPA
 			if( !SetWindowSubclass(hChildWindowTextViewer, WndEditSubclassProc, 0, 0) )
 			{
 				DWORD err = GetLastError();
-				DebugLog("WndProcLeftChildren(): SetWindowSubclass() failed - err = %d", err);
-			}
-
-			// subclass the EDIT control so that we can intercept keystrokes (to make the EDIT control "read only")
-			// https://msdn.microsoft.com/en-us/library/bb773183%28VS.85%29.aspx
-			if( !SetWindowSubclass(hChildWindowTextViewer, WndEditSubclassProc, 0, 0) )
-			{
-				DWORD err = GetLastError();
-				DebugLog("WndProcLeftChildren(): SetWindowSubclass() failed - err = %d", err);
-			}
-
-			// subclass the EDIT control so that we can intercept keystrokes (to make the EDIT control "read only")
-			// https://msdn.microsoft.com/en-us/library/bb773183%28VS.85%29.aspx
-			if( !SetWindowSubclass(hChildWindowTextViewer, WndEditSubclassProc, 0, 0) )
-			{
-				DWORD err = GetLastError();
 				DebugLog("WndProcLeftChildren(): SetWindowSubclass() for EDIT failed - err = %d", err);
 				return 0;
 			}
@@ -439,6 +425,35 @@ LRESULT CALLBACK WndListViewSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LP
 {
 	switch (uMsg)
 	{
+		case WM_CHAR:
+			{
+				if( wParam == 0x06 )  // ctrl-F
+				{
+					if( (hWnd == hChildWindowFunctions) || (hWnd == hChildWindowParentFunctions) || (hWnd == hChildWindowChildrenFunctions) )
+					{
+						ghFindSymbolDialogParent = hWnd;
+
+						int row = (int)DialogBox(hInst, MAKEINTRESOURCE(IDD_FINDSYMBOL), hWnd, FindSymbolModalDialog);
+
+						if( row >= 0 )
+						{
+							SetFocus(ghDialogWnd);  // set focus back to main dialog (after closing the DialogBox
+
+							DialogThreadIdRecord_t* ListView_ThreadIdRecord = (DialogThreadIdRecord_t*)CaptureCallTreeThreadArrayPointer[DialogListViewThreadIndex];
+							assert(ListView_ThreadIdRecord);
+
+							SetFocus(ghFindSymbolDialogParent);  // set focus to ListView (so selected line will be highlighted)
+
+							ListViewSetRowSelected(ghFindSymbolDialogParent, row, ListView_ThreadIdRecord, (ghFindSymbolDialogParent == hChildWindowFunctions));
+						}
+
+						return 0;
+					}
+				}
+
+				return DefSubclassProc(hWnd, uMsg, wParam, lParam);
+			}
+
 		case WM_RBUTTONDOWN:
 			{
 				SetFocus(hWnd);
@@ -863,8 +878,12 @@ BOOL CenterWindow (HWND hWnd)
     w = rRect.right - rRect.left;
     h = rRect.bottom - rRect.top;
 
-    if (NULL == (hParentWnd = GetParent( hWnd )))
+	hParentWnd = GetParent(hWnd);
+
+    if( hParentWnd == NULL )
+	{
        hParentWnd = GetDesktopWindow();
+	}
 
     GetWindowRect( hParentWnd, &rParentRect );
 
@@ -1152,6 +1171,180 @@ INT_PTR CALLBACK ThreadIdModalDialog(HWND hDlg, UINT message, WPARAM wParam, LPA
 				return (INT_PTR)TRUE;
 			}
 			break;
+	}
+
+	return (INT_PTR)FALSE;
+}
+
+#define MAX_FUNCTION_NAME_LEN 2048
+
+INT_PTR CALLBACK FindSymbolModalDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
+{
+	switch (message)
+	{
+		case WM_INITDIALOG:
+			{
+				CenterWindow(hDlg);
+
+				TCHAR buffer[64];
+				swprintf(buffer, sizeof(buffer), TEXT("Find Function by name - %s"), (ghFindSymbolDialogParent == hChildWindowFunctions) ? TEXT("Functions") : (ghFindSymbolDialogParent == hChildWindowParentFunctions) ? TEXT("Parents") : TEXT("Children"));
+
+				SetWindowText(hDlg, buffer);
+
+				int case_sensitive = 0;
+
+				if( gConfig )
+				{
+					case_sensitive = gConfig->GetInt(CONFIG_FIND_FUNCTION_CASE_SENSITIVE);
+				}
+
+				CheckDlgButton(hDlg, IDC_CASE_SENSITIVE, case_sensitive ? BST_CHECKED : BST_UNCHECKED);
+
+				HWND hWndList = GetDlgItem(hDlg, IDC_FUNCTIONLIST);
+				SendMessage(hWndList, LB_RESETCONTENT, 0, 0);
+
+				HWND hWndEditControl = GetDlgItem(hDlg, IDC_FUNCTIONNAME);
+				SetFocus(hWndEditControl);  // automatically set focus to the edit control for the function name
+
+				return (INT_PTR)TRUE;
+			}
+
+			break;
+
+		case WM_COMMAND:
+			{
+				switch(LOWORD(wParam))
+				{
+					case IDOK:  // Enter was pressed in the "Enter Function Name to search for" edit control
+					{
+						if( DialogListViewThreadIndex >= 0 )
+						{
+							HWND hWndList = GetDlgItem(hDlg, IDC_FUNCTIONLIST);
+							SendMessage(hWndList, LB_RESETCONTENT, 0, 0);
+
+							HDC hDC = GetDC( hDlg );
+							SelectObject(hDC, (HFONT)SendDlgItemMessage(hDlg, IDC_FUNCTIONLIST, WM_GETFONT, NULL, NULL));
+
+							TEXTMETRIC tm;
+							GetTextMetrics( hDC, &tm );
+
+							DialogThreadIdRecord_t* ListView_thread_record = (DialogThreadIdRecord_t*)CaptureCallTreeThreadArrayPointer[DialogListViewThreadIndex];
+							assert(ListView_thread_record);
+
+							int number_rows = 0;
+
+							// determine the number of rows and set the length of the header text for the function category
+							if( ghFindSymbolDialogParent == hChildWindowFunctions )
+							{
+								number_rows = ListView_thread_record->CallTreeArraySize;
+							}
+							else if( ghFindSymbolDialogParent == hChildWindowParentFunctions )
+							{
+								DialogCallTreeRecord_t* ListView_CallTreeRecord = (DialogCallTreeRecord_t*)ListView_thread_record->CallTreeArray[ListViewRowSelectedFunctions];
+								assert(ListView_CallTreeRecord);
+
+								number_rows =  ListView_CallTreeRecord->ParentArraySize;
+							}
+							else if( ghFindSymbolDialogParent == hChildWindowChildrenFunctions )
+							{
+								DialogCallTreeRecord_t* ListView_CallTreeRecord = (DialogCallTreeRecord_t*)ListView_thread_record->CallTreeArray[ListViewRowSelectedFunctions];
+								assert(ListView_CallTreeRecord);
+
+								number_rows =  ListView_CallTreeRecord->ChildrenArraySize;
+							}
+
+							TCHAR wbuffer[MAX_FUNCTION_NAME_LEN];
+							GetDlgItemText(hDlg, IDC_FUNCTIONNAME, wbuffer, _countof(wbuffer));
+
+							char buffer[MAX_FUNCTION_NAME_LEN];
+							ConvertTCHARtoCHAR(wbuffer, buffer, sizeof(buffer));
+
+							bool case_sensitive = (IsDlgButtonChecked(hDlg, IDC_CASE_SENSITIVE) == BST_CHECKED);
+
+							bool bWasMatchFound = false;
+							int max_len = 0;
+
+							for( int row = 0; row < number_rows; ++row )
+							{
+								DialogCallTreeRecord_t* ListView_record = GetListViewRecordForRow(ghFindSymbolDialogParent, row);
+
+								size_t len = strlen(ListView_record->SymbolName);
+
+								if( (case_sensitive && (StrStrA(ListView_record->SymbolName, buffer) != 0)) ||
+									(!case_sensitive && (StrStrIA(ListView_record->SymbolName, buffer) != 0)) )
+								{
+									bWasMatchFound = true;
+
+									size_t len = min(MAX_FUNCTION_NAME_LEN, strlen(ListView_record->SymbolName));
+									size_t num_chars;
+
+									mbstowcs_s(&num_chars, wbuffer, MAX_FUNCTION_NAME_LEN, ListView_record->SymbolName, len);
+
+									int pos = (int)SendMessage(hWndList, LB_ADDSTRING, 0, (LPARAM)wbuffer);
+									SendMessage(hWndList, LB_SETITEMDATA, pos, (LPARAM)row);
+
+									len = wcslen(wbuffer);
+
+									SIZE size;
+									GetTextExtentPoint32(hDC, wbuffer, (int)len, &size);
+
+									if( size.cx > max_len )
+									{
+										max_len = size.cx;
+									}
+								}
+							}
+
+							SendDlgItemMessage( hDlg, IDC_FUNCTIONLIST, LB_SETHORIZONTALEXTENT, max_len + tm.tmAveCharWidth, 0);
+
+							ReleaseDC( hDlg, hDC );
+
+							EnableWindow( GetDlgItem(hDlg, IDSELECT), bWasMatchFound ? TRUE : FALSE);
+						}
+
+						return (INT_PTR)TRUE;
+					}
+
+					case IDSELECT:
+					{
+						if( gConfig )
+						{
+							UINT checked = (int)IsDlgButtonChecked(hDlg, IDC_CASE_SENSITIVE);
+							gConfig->SetInt(CONFIG_FIND_FUNCTION_CASE_SENSITIVE, (checked == BST_CHECKED));
+						}
+
+						HWND hWndList = GetDlgItem(hDlg, IDC_FUNCTIONLIST);
+
+						int item = (int)SendMessage(hWndList, LB_GETCURSEL, 0, 0);
+						int row = (int)SendMessage(hWndList, LB_GETITEMDATA, item, 0);
+
+						EndDialog(hDlg, row);
+						return (INT_PTR)TRUE;
+					}
+
+					case IDCANCEL:
+					{
+						if( gConfig )
+						{
+							UINT checked = (int)IsDlgButtonChecked(hDlg, IDC_CASE_SENSITIVE);
+							gConfig->SetInt(CONFIG_FIND_FUNCTION_CASE_SENSITIVE, (checked == BST_CHECKED));
+						}
+
+						EndDialog(hDlg, -1);
+						return (INT_PTR)TRUE;
+					}
+
+					case IDC_FUNCTIONLIST:
+					{
+						if( HIWORD(wParam) == LBN_DBLCLK )
+						{
+							SendMessage(hDlg, WM_COMMAND, IDSELECT, 0);
+						}
+
+						return (INT_PTR)TRUE;
+					}
+				}
+			}
 	}
 
 	return (INT_PTR)FALSE;

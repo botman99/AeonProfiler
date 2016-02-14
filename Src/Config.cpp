@@ -23,6 +23,7 @@ ConfigValueStruct ConfigValues[] =
 	ConfigValueStruct(CONFIG_MIDDLE_SPLITTER_PERCENT, CONFIG_FLOAT, 0.60f, "middle_splitter_percent"),
 	ConfigValueStruct(CONFIG_LEFT_SPLITTER_PERCENT, CONFIG_FLOAT, 0.60f, "left_splitter_percent"),
 	ConfigValueStruct(CONFIG_RIGHT_SPLITTER_PERCENT, CONFIG_FLOAT, 0.50f, "right_splitter_percent"),
+	ConfigValueStruct(CONFIG_FIND_FUNCTION_CASE_SENSITIVE, CONFIG_INT, 0, "find_function_case_sensitive"),
 };
 
 
