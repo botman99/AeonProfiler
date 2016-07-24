@@ -21,11 +21,11 @@ private:
 	char* FirstBlock;			// pointer to first block that was allocated (head of list)
 	char* CurrentBlock;			// pointer to current block (tail of list)
 
-	HANDLE ghAllocatorMutex;
-	int WaitOnMutex;			// whether this allocator needs a threading mutex (to keep it thread safe)
+	bool bNeedsToBeThreadSafe;	// whether this allocator needs to be thread safe (is it used by more than one thread?)
+	CRITICAL_SECTION AllocatorCriticalSection;
 
 public:
-	CAllocator(int InWaitOnMutex = 0);
+	CAllocator(bool bInNeedsToBeThreadSafe);
 	~CAllocator();
 
 	void FreeBlocks();			// free all the allocations by freeing the blocks allocated from the operating system
@@ -54,6 +54,13 @@ public:
 	{
 		T * obj = (T*)AllocateBytes(sizeof(T), std::alignment_of<T>::value);
 		return new (obj) T(std::forward<Arg1>(arg1), std::forward<Arg2>(arg2));
+	}
+
+	template<typename T, typename Arg1, typename Arg2, typename Arg3>
+	T * New(Arg1 && arg1, Arg2 && arg2, Arg3 && arg3)
+	{
+		T * obj = (T*)AllocateBytes(sizeof(T), std::alignment_of<T>::value);
+		return new (obj) T(std::forward<Arg1>(arg1), std::forward<Arg2>(arg2), std::forward<Arg3>(arg3));
 	}
 };
 

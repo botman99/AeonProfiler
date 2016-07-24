@@ -18,7 +18,7 @@
 extern CConfig* gConfig;
 extern CDebugLog* GDebugLog;
 
-CAllocator GlobalAllocator;
+CAllocator GlobalAllocator(true);  // needs to be thread safe
 
 extern CAllocator SymbolAllocator;  // allocator for storing the symbol names
 extern CAllocator DialogAllocator;  // allocator for the Profiler Dialog window
@@ -57,19 +57,19 @@ void HandleExit()
 
 void CallerEnter(CallerData_t& Call)
 {
-	EnterCriticalSection(&gCriticalSection);
-
 	if( ThreadIdHashTable == nullptr )
 	{
-		ThreadIdHashTable = GlobalAllocator.New<CHash<CThreadIdRecord>>(&GlobalAllocator, THREADID_HASH_TABLE_SIZE);
+		ThreadIdHashTable = GlobalAllocator.New<CHash<CThreadIdRecord>>(&GlobalAllocator, THREADID_HASH_TABLE_SIZE, true);
 	}
 
 	assert(ThreadIdHashTable);
 
 	// look up the thread id record
 	__int64 pTemp = (__int64)Call.ThreadId;  // cast the DWORD ThreadId to a 64 bit value so we can safely cast that to a void pointer
-	CThreadIdRecord* pThreadIdRec = ThreadIdHashTable->EmplaceIfNecessary((void*)pTemp, Call.ThreadId, GlobalAllocator).second;
+	CThreadIdRecord* pThreadIdRec = ThreadIdHashTable->EmplaceIfNecessary((void*)pTemp, Call.ThreadId).second;
 	assert(pThreadIdRec);
+
+	EnterCriticalSection(&pThreadIdRec->ThreadIdCriticalSection);
 
 	CCallTreeRecord* pCallTreeRec = pThreadIdRec->CallTreeHashTable.EmplaceIfNecessary((void*)Call.CallerAddress, Call.CallerAddress).second;
 	assert(pCallTreeRec);
@@ -105,14 +105,12 @@ void CallerEnter(CallerData_t& Call)
 
 	pThreadIdRec->CallStack.Push(std::move(CurrentCallerData));
 
-	LeaveCriticalSection(&gCriticalSection);
+	LeaveCriticalSection(&pThreadIdRec->ThreadIdCriticalSection);
 }
 
 
 void CallerExit(CallerData_t& Call)
 {
-	EnterCriticalSection(&gCriticalSection);
-
 	assert(ThreadIdHashTable);
 
 	// look up the thread id record
@@ -120,6 +118,8 @@ void CallerExit(CallerData_t& Call)
 	CThreadIdRecord** pThreadIdRecPtr = ThreadIdHashTable->LookupPointer((void*)pTemp);
 	CThreadIdRecord* pThreadIdRec = *pThreadIdRecPtr;
 	assert(pThreadIdRec);
+
+	EnterCriticalSection(&pThreadIdRec->ThreadIdCriticalSection);
 
 	assert( !pThreadIdRec->CallStack.IsEmpty() );
 
@@ -145,7 +145,7 @@ void CallerExit(CallerData_t& Call)
 		if( CurrentCallerData.CurrentCallTreeRecord->ParentHashTable == nullptr )  // create the parent hash table if needed
 		{
 			CurrentCallerData.CurrentCallTreeRecord->ParentHashTable =
-				pThreadIdRec->ThreadIdRecordAllocator.New<CHash<CCallTreeRecord>>(&pThreadIdRec->ThreadIdRecordAllocator, PARENT_CALLRECORD_HASH_TABLE_SIZE);
+				pThreadIdRec->ThreadIdRecordAllocator.New<CHash<CCallTreeRecord>>(&pThreadIdRec->ThreadIdRecordAllocator, PARENT_CALLRECORD_HASH_TABLE_SIZE, false);
 		}
 
 		// see if the parent already exists in this child's ParentHashTable
@@ -157,7 +157,7 @@ void CallerExit(CallerData_t& Call)
 		if( ParentCallerData->CurrentCallTreeRecord->ChildrenHashTable == nullptr )
 		{
 			ParentCallerData->CurrentCallTreeRecord->ChildrenHashTable =
-				pThreadIdRec->ThreadIdRecordAllocator.New<CHash<CCallTreeRecord>>(&pThreadIdRec->ThreadIdRecordAllocator, CHILDREN_CALLRECORD_HASH_TABLE_SIZE);
+				pThreadIdRec->ThreadIdRecordAllocator.New<CHash<CCallTreeRecord>>(&pThreadIdRec->ThreadIdRecordAllocator, CHILDREN_CALLRECORD_HASH_TABLE_SIZE, false);
 		}
 
 		// see if this child already exists in the parent's ChildrenHashTable
@@ -214,5 +214,5 @@ void CallerExit(CallerData_t& Call)
 		}
 	}
 
-	LeaveCriticalSection(&gCriticalSection);
+	LeaveCriticalSection(&pThreadIdRec->ThreadIdCriticalSection);
 }

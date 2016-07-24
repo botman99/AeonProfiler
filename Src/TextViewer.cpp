@@ -4,7 +4,7 @@
 #include "Allocator.h"
 #include "TextViewer.h"
 
-CAllocator TextViewerAllocator;
+CAllocator TextViewerAllocator(false);
 
 char TextViewerFileName[MAX_PATH] = {""};  // the most recent file loaded into the text viewer
 

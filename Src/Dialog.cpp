@@ -847,6 +847,10 @@ LRESULT CALLBACK WndEditSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM
 {
 	switch (uMsg)
 	{
+		case WM_MOUSEACTIVATE:
+			SetFocus(hWnd);
+			return DefSubclassProc(hWnd, uMsg, wParam, lParam);
+
 		case WM_RBUTTONDOWN:
 			return 0;  // we don't want the right click menu (since it allows things like "Paste")
 
@@ -1116,7 +1120,7 @@ INT_PTR CALLBACK ThreadIdModalDialog(HWND hDlg, UINT message, WPARAM wParam, LPA
 
 						bool bShouldShowThread = (bShowInactiveThreads || bIsThreadRunning) && (bShowThreadsWithNoData || (ThreadRec->CallTreeArraySize > 0));
 
-						if( bShouldShowThread )
+						if( bShouldShowThread && ThreadRec->SymbolName )
 						{
 							size_t len = min(wSymbolName_len, strlen(ThreadRec->SymbolName));
 							size_t num_chars;

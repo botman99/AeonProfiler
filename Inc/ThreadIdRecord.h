@@ -31,6 +31,9 @@ class CThreadIdRecord
 {
 public:
 	CAllocator ThreadIdRecordAllocator;  // allocator for this specific thread
+	CRITICAL_SECTION ThreadIdCriticalSection;
+
+	bool bIsCriticalSectionLocked;
 
 	CStack CallStack;  // the current call stack for this thread
 	CHash<CCallTreeRecord> CallTreeHashTable;
@@ -38,23 +41,30 @@ public:
 	DWORD ThreadId;
 	char* SymbolName;
 
-	CThreadIdRecord(DWORD InThreadId, CAllocator& InAllocator) :
-		ThreadIdRecordAllocator(),
+	CThreadIdRecord(DWORD InThreadId) :
+		ThreadIdRecordAllocator(false),
 		CallStack(&ThreadIdRecordAllocator),
-		CallTreeHashTable(&ThreadIdRecordAllocator, CALLRECORD_HASH_TABLE_SIZE),
+		CallTreeHashTable(&ThreadIdRecordAllocator, CALLRECORD_HASH_TABLE_SIZE, false),
 		ThreadId( InThreadId )
 	{
+		InitializeCriticalSection(&ThreadIdCriticalSection);
+		SetCriticalSectionSpinCount(&ThreadIdCriticalSection, 4000);  // 4000 is what the Windows heap manager uses (https://msdn.microsoft.com/en-us/library/windows/desktop/ms686197%28v=vs.85%29.aspx)
+
+		bIsCriticalSectionLocked = false;
+
 		NumThreads++;
 	}
 
 	~CThreadIdRecord()
 	{
+		NumThreads--;
+
+		DeleteCriticalSection(&ThreadIdCriticalSection);
+
 		ThreadId = 0;
 		SymbolName = NULL;
 
 		ThreadIdRecordAllocator.FreeBlocks();  // free all the memory allocated by this thread's allocator
-
-		NumThreads--;
 	}
 
 	void PrintStats(char* Header, int NestLevel)
@@ -71,6 +81,21 @@ public:
 
 		ThreadIdRecordAllocator.PrintStats("ThreadIdRecordAllocator - ", NestLevel + 1);
 		CallTreeHashTable.PrintStats("CallTreeHashTable - ", NestLevel + 1);
+	}
+
+	void Lock()
+	{
+		EnterCriticalSection(&ThreadIdCriticalSection);
+		bIsCriticalSectionLocked = true;
+	}
+
+	void Unlock()
+	{
+		if( bIsCriticalSectionLocked )
+		{
+			LeaveCriticalSection(&ThreadIdCriticalSection);
+			bIsCriticalSectionLocked = false;
+		}
 	}
 
 	unsigned int GetNumRecordsToCopy()
@@ -90,17 +115,19 @@ public:
 		pRec->CallTreeArray = nullptr;
 		pRec->CallTreeArraySize = 0;
 
+		pRec->Address = nullptr;
+
 		pRec->ThreadId = ThreadId;
 		pRec->SymbolName = SymbolName;
 
 		if( CallStack.pTop )  // copy the thread's Stack
 		{
 			pRec->StackArray = CallStack.CopyStackToArray(InCopyAllocator, pRec->StackArraySize);
-			pRec->Address = pRec->StackArray[0].CallerAddress;
-		}
-		else
-		{
-			pRec->Address = nullptr;
+			assert(pRec->StackArraySize > 0);
+			if( pRec->StackArraySize > 0 )
+			{
+				pRec->Address = pRec->StackArray[pRec->StackArraySize-1].CallerAddress;
+			}
 		}
 
 		pRec->CallTreeArray = CallTreeHashTable.CopyHashToArray(InCopyAllocator, pRec->CallTreeArraySize, true);
@@ -123,6 +150,16 @@ public:
 	}
 
 private:
-	CThreadIdRecord(const CThreadIdRecord& other, CAllocator* InThreadIdRecordAllocator = nullptr);
-	CThreadIdRecord& operator=(const CThreadIdRecord&);
+	CThreadIdRecord(const CThreadIdRecord& other) :  // copy constructor (this should never get called)
+		ThreadIdRecordAllocator(false),
+		CallStack(&ThreadIdRecordAllocator),
+		CallTreeHashTable(&ThreadIdRecordAllocator, CALLRECORD_HASH_TABLE_SIZE, false)
+	{
+		assert(false);
+	}
+
+	CThreadIdRecord& operator=(const CThreadIdRecord&)  // assignment operator (this should never get called)
+	{
+		assert(false);
+	}
 };

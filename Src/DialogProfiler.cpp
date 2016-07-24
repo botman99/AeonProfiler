@@ -24,8 +24,8 @@ extern int TicksPerHundredNanoseconds;
 
 extern DWORD ApplicationThreadId;
 
-CAllocator SymbolAllocator;  // allocator for storing the symbol names
-CAllocator DialogAllocator;  // allocator for the Profiler Dialog window
+CAllocator SymbolAllocator(false);  // allocator for storing the symbol names
+CAllocator DialogAllocator(false);  // allocator for the Profiler Dialog window
 
 HANDLE hApplicationProcess = nullptr;
 
@@ -103,8 +103,6 @@ int CaptureCallTreeData()  // return the number of symbols that need to be looke
 		return -1;  // there's no call tree data captured by the profiler yet, we're done
 	}
 
-	EnterCriticalSection(&gCriticalSection);
-
 	int registers[4];
 	__cpuid(registers, 0);
 	CaptureCallTreeTime = __rdtsc();
@@ -114,8 +112,6 @@ int CaptureCallTreeData()  // return the number of symbols that need to be looke
 
 	CaptureCallTreeThreadArrayPointer = ThreadIdHashTable->CopyHashToArray(&DialogAllocator, CaptureCallTreeThreadArraySize, true);
 	assert(CaptureCallTreeThreadArrayPointer);
-
-	LeaveCriticalSection(&gCriticalSection);
 
 
 	InitializeSymbolLookup();
@@ -352,15 +348,11 @@ void ResetCallTreeData()
 		return;  // there's no call tree data captured by the profiler yet, we're done
 	}
 
-	EnterCriticalSection(&gCriticalSection);
-
 	int registers[4];
 	__cpuid(registers, 0);
 	DWORD64 TimeNow = __rdtsc();
 
 	ThreadIdHashTable->ResetCounters(TimeNow);
-
-	LeaveCriticalSection(&gCriticalSection);
 
 	DialogAllocator.FreeBlocks();  // free all the memory allocated by the DialogAllocator
 

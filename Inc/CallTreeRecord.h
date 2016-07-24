@@ -94,6 +94,16 @@ public:
 	{
 	}
 
+	void Lock()
+	{
+		// do nothing
+	}
+
+	void Unlock()
+	{
+		// do nothing
+	}
+
 	unsigned int GetNumRecordsToCopy()
 	{
 		if( CallCount )

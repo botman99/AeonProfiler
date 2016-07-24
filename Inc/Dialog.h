@@ -27,7 +27,6 @@ enum SortType
 };
 
 extern HMODULE ModuleHandle;
-extern CRITICAL_SECTION gCriticalSection;
 
 extern TCHAR app_filename[];  // filename of the application that loaded the DLL
 extern DWORD ApplicationProcessId;

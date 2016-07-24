@@ -17,6 +17,9 @@ public:
 
 	CAllocator* HashAllocator;
 
+	bool bNeedsToBeThreadSafe;	// whether this allocator needs to be thread safe (is it used by more than one thread?)
+	CRITICAL_SECTION HashCriticalSection;
+
 	int HashTableSize;
 	Hash_t** HashTable;		// array of pointers to Hash_t structs
 
@@ -27,21 +30,35 @@ public:
 	unsigned int MaxListLength;		// the length of the longest linked list currently in the hash table
 	unsigned int NumTotalRecords;	// the total number of hash records we have in this hash table
 
-	CHash(CAllocator* InHashAllocator, int InHashTableSize) :
+	CHash(CAllocator* InHashAllocator, int InHashTableSize, bool bInNeedsToBeThreadSafe) :
 		HashAllocator(InHashAllocator)
+		,bNeedsToBeThreadSafe(bInNeedsToBeThreadSafe)
 		,HashTableSize(InHashTableSize)
 		,NumUsedSlots(0)
 		,MaxListLength(0)
 		,NumTotalRecords(0)
 	{
 		HashTable = nullptr;
+
+		if( bNeedsToBeThreadSafe )
+		{
+			InitializeCriticalSection(&HashCriticalSection);
+			SetCriticalSectionSpinCount(&HashCriticalSection, 4000);  // 4000 is what the Windows heap manager uses (https://msdn.microsoft.com/en-us/library/windows/desktop/ms686197%28v=vs.85%29.aspx)
+		}
+
 		if( HashAllocator && HashTableSize )
 		{
 			HashTable = (Hash_t**)HashAllocator->AllocateBytes(HashTableSize * sizeof(Hash_t*), sizeof(void*));
 		}
 	}
 
-	~CHash() {}
+	~CHash()
+	{
+		if( bNeedsToBeThreadSafe )
+		{
+			DeleteCriticalSection(&HashCriticalSection);
+		}
+	}
 
 	void PrintStats(char* Header, int NestLevel)
 	{
@@ -88,6 +105,8 @@ public:
 				Hash_t* p = HashTable[i];
 				while( p )
 				{
+					p->value->Lock();  // lock the critical section (so we can copy the data without it changing)
+
 					NumTotalRecordsToCopy += p->value->GetNumRecordsToCopy();
 
 					p = p->Next;
@@ -126,6 +145,16 @@ public:
 				}
 			}
 
+			for( int i = 0; i < HashTableSize; i++ )
+			{
+				Hash_t* p = HashTable[i];
+				while( p )
+				{
+					p->value->Unlock();  // unlock the critical section
+					p = p->Next;
+				}
+			}
+
 			OutArraySize = NumTotalRecordsToCopy;
 			return pArrayOfPointers;
 		}
@@ -142,7 +171,10 @@ public:
 				Hash_t* p = HashTable[i];
 				while( p )
 				{
+					p->value->Lock();  // lock the critical section
 					p->value->ResetCounters(TimeNow);
+					p->value->Unlock();  // unlock the critical section
+
 					p = p->Next;
 				}
 			}
@@ -216,7 +248,7 @@ public:
 
 			if( pHashRecord->key == InPointer )
 			{
-				return &pHashRecord->value;
+				return &pHashRecord->value;  // found the key, return the value
 			}
 
 			pPrevHashRecord = pHashRecord;  // save the previous pointer (to link in a new one below)
@@ -229,6 +261,11 @@ public:
 		}
 
 		// didn't find it, so add a new one to the hash table...
+
+		if( bNeedsToBeThreadSafe )
+		{
+			EnterCriticalSection(&HashCriticalSection);
+		}
 
 		Hash_t* pNewHashRec = nullptr;
 
@@ -271,6 +308,11 @@ public:
 			(MaxListLength > 10) )  // is the maximum length of any linked list in the hash table more than 10 nodes?
 		{
 			IncreaseHashTableSize();
+		}
+
+		if( bNeedsToBeThreadSafe )
+		{
+			LeaveCriticalSection(&HashCriticalSection);
 		}
 
 		return &pNewHashRec->value;

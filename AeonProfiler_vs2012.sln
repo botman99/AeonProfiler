@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 2012
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "AeonProfiler", "AeonProfiler_vs2012.vcxproj", "{07083578-CF19-41CD-AF26-B3DB0FAE5170}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "AeonProfiler_vs2012", "AeonProfiler_vs2012.vcxproj", "{07083578-CF19-41CD-AF26-B3DB0FAE5170}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

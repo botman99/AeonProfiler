@@ -8,18 +8,13 @@
 
 const int DEFAULT_PAGESIZE = 65536;
 
-CAllocator::CAllocator(int InWaitOnMutex) :
-	WaitOnMutex(InWaitOnMutex)
+CAllocator::CAllocator(bool bInNeedsToBeThreadSafe) :
+	bNeedsToBeThreadSafe(bInNeedsToBeThreadSafe)
 {
-	ghAllocatorMutex = nullptr;
-
-	if( WaitOnMutex )
+	if( bNeedsToBeThreadSafe )
 	{
-		ghAllocatorMutex = CreateMutex(NULL, FALSE, NULL);
-		if( ghAllocatorMutex == NULL )
-		{
-			DebugLog("Failed to create ghAllocatorMutex!!!");
-		}
+		InitializeCriticalSection(&AllocatorCriticalSection);
+		SetCriticalSectionSpinCount(&AllocatorCriticalSection, 4000);  // 4000 is what the Windows heap manager uses (https://msdn.microsoft.com/en-us/library/windows/desktop/ms686197%28v=vs.85%29.aspx)
 	}
 
 	FirstBlock = nullptr;
@@ -33,10 +28,9 @@ CAllocator::~CAllocator()
 		FreeBlocks();
 	}
 
-	if( ghAllocatorMutex )
+	if( bNeedsToBeThreadSafe )
 	{
-		ReleaseMutex(ghAllocatorMutex);
-		CloseHandle(ghAllocatorMutex);
+		DeleteCriticalSection(&AllocatorCriticalSection);
 	}
 }
 
@@ -106,83 +100,95 @@ void* CAllocator::AllocateBytes(size_t NumBytes, int Alignment)
 		return nullptr;
 	}
 
-	DWORD dwWaitResult = WAIT_OBJECT_0;
-
-	if( WaitOnMutex )
+	if( bNeedsToBeThreadSafe )
 	{
-		dwWaitResult = WaitForSingleObject( ghAllocatorMutex, INFINITE);  // wait for the mutex, no time-out interval
+		EnterCriticalSection(&AllocatorCriticalSection);
 	}
 
-	if( dwWaitResult == WAIT_OBJECT_0 )
+	if( CurrentBlock == nullptr )
 	{
-		if( CurrentBlock == nullptr )
+		size_t page_size = max(NumBytes + sizeof(AllocHeader) + Alignment, DEFAULT_PAGESIZE);
+		page_size = ((page_size + DEFAULT_PAGESIZE - 1) / DEFAULT_PAGESIZE) * DEFAULT_PAGESIZE;
+
+		// allocate first block
+		char* Ptr = (char*)VirtualAlloc( NULL, page_size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE );
+
+		assert(Ptr);
+
+		if( Ptr == NULL )
 		{
-			size_t page_size = max(NumBytes + sizeof(AllocHeader) + Alignment, DEFAULT_PAGESIZE);
-			page_size = ((page_size + DEFAULT_PAGESIZE - 1) / DEFAULT_PAGESIZE) * DEFAULT_PAGESIZE;
+			DWORD error = GetLastError();
+			DebugLog("VirtualAlloc failed: error = %d", error);
 
-			// allocate first block
-			char* Ptr = (char*)VirtualAlloc( NULL, page_size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE );
+			if( bNeedsToBeThreadSafe )
+			{
+				LeaveCriticalSection(&AllocatorCriticalSection);
+			}
 
-			assert(Ptr);
-
-			FirstBlock = Ptr;
-			CurrentBlock = Ptr;
-
-			AllocHeader* FirstBlockHeader = (AllocHeader*)CurrentBlock;
-			FirstBlockHeader->NextBlock = nullptr;
-			FirstBlockHeader->FreePointer = (char*)FirstBlockHeader + sizeof(AllocHeader);
-			FirstBlockHeader->Size = page_size;
-			FirstBlockHeader->FreeRemaining = page_size - sizeof(AllocHeader);
+			return nullptr;
 		}
 
-		AllocHeader* Header = (AllocHeader*)CurrentBlock;
+		FirstBlock = Ptr;
+		CurrentBlock = Ptr;
 
-		char* pAlignedFreePointer = (char*)(((uintptr_t)(Header->FreePointer + Alignment - 1) / Alignment) * Alignment);
-		size_t AlignedOffset = pAlignedFreePointer - Header->FreePointer;
-		size_t AlignedFreeRemaining = Header->FreeRemaining - AlignedOffset;
-
-		if( NumBytes >= AlignedFreeRemaining )  // not enough free space for aligned allocation?
-		{
-			size_t page_size = max(NumBytes + sizeof(AllocHeader) + Alignment, DEFAULT_PAGESIZE);
-			page_size = ((page_size + DEFAULT_PAGESIZE - 1) / DEFAULT_PAGESIZE) * DEFAULT_PAGESIZE;
-
-			// allocate next block and link it in
-			char* Ptr = (char*)VirtualAlloc( NULL, page_size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE );
-
-			assert(Ptr);
-
-			Header->NextBlock = Ptr;
-
-			CurrentBlock = Ptr;
-
-			Header = (AllocHeader*)CurrentBlock;
-			Header->NextBlock = nullptr;
-			Header->FreePointer = (char*)Header + sizeof(AllocHeader);
-			Header->Size = page_size;
-			Header->FreeRemaining = page_size - sizeof(AllocHeader);
-
-			pAlignedFreePointer = (char*)(((uintptr_t)(Header->FreePointer + Alignment - 1) / Alignment) * Alignment);
-			AlignedOffset = pAlignedFreePointer - Header->FreePointer;
-			AlignedFreeRemaining = Header->FreeRemaining - AlignedOffset;
-		}
-
-		Header->FreePointer = pAlignedFreePointer + NumBytes;
-		Header->FreeRemaining = AlignedFreeRemaining - NumBytes;
-
-		if( WaitOnMutex )
-		{
-			ReleaseMutex(ghAllocatorMutex);
-		}
-
-		return (void*)pAlignedFreePointer;
+		AllocHeader* FirstBlockHeader = (AllocHeader*)CurrentBlock;
+		FirstBlockHeader->NextBlock = nullptr;
+		FirstBlockHeader->FreePointer = (char*)FirstBlockHeader + sizeof(AllocHeader);
+		FirstBlockHeader->Size = page_size;
+		FirstBlockHeader->FreeRemaining = page_size - sizeof(AllocHeader);
 	}
 
-	if( WaitOnMutex )
+	AllocHeader* Header = (AllocHeader*)CurrentBlock;
+
+	char* pAlignedFreePointer = (char*)(((uintptr_t)(Header->FreePointer + Alignment - 1) / Alignment) * Alignment);
+	size_t AlignedOffset = pAlignedFreePointer - Header->FreePointer;
+	size_t AlignedFreeRemaining = Header->FreeRemaining - AlignedOffset;
+
+	if( NumBytes >= AlignedFreeRemaining )  // not enough free space for aligned allocation?
 	{
-		DebugLog("CAllocator::AllocateBytes(): Wait for ghAllocatorMutex mutex failed!");
-		ReleaseMutex(ghAllocatorMutex);  // wait on mutex failed
-		assert(false);
+		size_t page_size = max(NumBytes + sizeof(AllocHeader) + Alignment, DEFAULT_PAGESIZE);
+		page_size = ((page_size + DEFAULT_PAGESIZE - 1) / DEFAULT_PAGESIZE) * DEFAULT_PAGESIZE;
+
+		// allocate next block and link it in
+		char* Ptr = (char*)VirtualAlloc( NULL, page_size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE );
+
+		assert(Ptr);
+
+		if( Ptr == NULL )
+		{
+			DWORD error = GetLastError();
+			DebugLog("VirtualAlloc failed: error = %d", error);
+
+			if( bNeedsToBeThreadSafe )
+			{
+				LeaveCriticalSection(&AllocatorCriticalSection);
+			}
+
+			return nullptr;
+		}
+
+		Header->NextBlock = Ptr;
+
+		CurrentBlock = Ptr;
+
+		Header = (AllocHeader*)CurrentBlock;
+		Header->NextBlock = nullptr;
+		Header->FreePointer = (char*)Header + sizeof(AllocHeader);
+		Header->Size = page_size;
+		Header->FreeRemaining = page_size - sizeof(AllocHeader);
+
+		pAlignedFreePointer = (char*)(((uintptr_t)(Header->FreePointer + Alignment - 1) / Alignment) * Alignment);
+		AlignedOffset = pAlignedFreePointer - Header->FreePointer;
+		AlignedFreeRemaining = Header->FreeRemaining - AlignedOffset;
 	}
 
-	return nullptr;
+	Header->FreePointer = pAlignedFreePointer + NumBytes;
+	Header->FreeRemaining = AlignedFreeRemaining - NumBytes;
+
+	if( bNeedsToBeThreadSafe )
+	{
+		LeaveCriticalSection(&AllocatorCriticalSection);
+	}
+
+	return (void*)pAlignedFreePointer;
 }

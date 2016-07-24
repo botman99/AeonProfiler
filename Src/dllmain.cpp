@@ -25,8 +25,6 @@ int TicksPerHundredNanoseconds = 0;  // how many CPU ticks happen in 100 nanosec
 HANDLE DialogThreadHandle = NULL;
 DWORD DialogThreadID;
 
-CRITICAL_SECTION gCriticalSection;
-
 CDebugLog* gDebugLog = NULL;
 
 
@@ -86,9 +84,6 @@ BOOL APIENTRY DllMain( HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReser
 			ApplicationProcessId = GetCurrentProcessId();
 			ApplicationThreadId = GetCurrentThreadId();
 
-			InitializeCriticalSection(&gCriticalSection);
-			SetCriticalSectionSpinCount(&gCriticalSection, 4000);  // 4000 is what the Windows heap manager uses (https://msdn.microsoft.com/en-us/library/windows/desktop/ms686197%28v=vs.85%29.aspx)
-
 			DWORD64 Counter_Freq, Counter_Before, Counter_After;
 			DWORD64 RDTSC_Before, RDTSC_After;
 
@@ -132,8 +127,6 @@ BOOL APIENTRY DllMain( HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReser
 
 				CloseHandle(DialogThreadHandle);
 			}
-
-			DeleteCriticalSection(&gCriticalSection);
 
 			if( gDebugLog )
 			{
