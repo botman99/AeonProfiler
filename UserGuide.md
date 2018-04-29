@@ -70,4 +70,6 @@ You can search for a symbol by name in any of the profiler ListView child window
 #### Saving the profiler data
 You can save the currently captured profiler data to a file and then load it up again using the AeonWin.exe application for later analysis by using the **File -> Save** menu item.  Use **File -> Load** when running the AeonWin.exe application to load the saved profiler data.
 
+Note: The AeonWin.exe application requires the AeonProfiler.dll file be in the same folder (since AeonWin.exe loads AeonProfiler.dll to display the saved profiler data).
+
 ![save_profile](https://github.com/botman99/AeonProfiler/raw/master/img/SaveProfilerData.png)
