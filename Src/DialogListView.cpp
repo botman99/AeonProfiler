@@ -2,7 +2,6 @@
 #include "targetver.h"
 #include "resource.h"
 
-#define WIN32_LEAN_AND_MEAN  // Exclude rarely-used stuff from Windows headers
 // Windows Header Files:
 #include <Windows.h>
 #include <Commctrl.h>
@@ -13,6 +12,9 @@
 
 int DialogListViewThreadIndex = -1;  // the index of the thread currently selected from the ThreadArray (-1 means invalid thread)
 
+DialogThreadIdRecord_t* gListView_ThreadIdRecordForQsort;
+const void* gRowCallTreeAddressForQsort;
+HWND ghWndFromforQsort;
 
 // ListView default settings for the three child windows...
 struct ListViewColumnsDefaults
@@ -115,6 +117,17 @@ DialogCallTreeRecord_t* GetListViewRecordForRow(HWND hwndFrom, unsigned int row)
 	}
 
 	return nullptr;
+}
+
+void WINAPI ListViewNotifyQsortThread(LPVOID lpData)
+{
+	qsort(gListView_ThreadIdRecordForQsort->CallTreeArray, gListView_ThreadIdRecordForQsort->CallTreeArraySize, sizeof(void*), ListView_SortCallTree);
+
+	extern HWND ghPleaseWaitModalDialogWnd;
+	if( ghPleaseWaitModalDialogWnd )
+	{
+		PostMessage(ghPleaseWaitModalDialogWnd, WM_PLEASEWAITDONE, 0, 0);
+	}
 }
 
 void ListViewNotify(HWND hWnd, LPARAM lParam)
@@ -229,18 +242,18 @@ void ListViewNotify(HWND hWnd, LPARAM lParam)
 					RowCallTreeAddress = ListView_CallTreeRecord->Address;
 				}
 
-				qsort(ListView_ThreadIdRecord->CallTreeArray, ListView_ThreadIdRecord->CallTreeArraySize, sizeof(void*), ListView_SortCallTree);
+				gListView_ThreadIdRecordForQsort = ListView_ThreadIdRecord;
+				gRowCallTreeAddressForQsort = RowCallTreeAddress;
+				ghWndFromforQsort = lpnmlv->hdr.hwndFrom;
 
-				if( RowCallTreeAddress )
-				{
-					ListViewRowSelectedFunctions = FindRowForAddress(hChildWindowFunctions, RowCallTreeAddress);
+				extern ePleaseWaitType PleaseWaitType;
+				PleaseWaitType = PleaseWait_ListViewNotifySort;
 
-					if( ListViewRowSelectedFunctions != -1 )
-					{
-						ListView_SetItemState(hChildWindowFunctions, ListViewRowSelectedFunctions, LVIS_FOCUSED | LVIS_SELECTED, 0x000F);
-						ListView_EnsureVisible(hChildWindowFunctions, ListViewRowSelectedFunctions, FALSE);
-					}
-				}
+				extern HWND ghPleaseWaitNotifyWnd;
+				ghPleaseWaitNotifyWnd = hWnd;
+
+				extern HINSTANCE hInst;
+				DialogBox(hInst, MAKEINTRESOURCE(IDD_PLEASEWAIT), hWnd, PleaseWaitModalDialog);
 			}
 			else if( hChildWindowCurrentlySorting == hChildWindowParentFunctions )
 			{
@@ -659,84 +672,106 @@ void ListViewSetRowSelected(HWND hWnd, int row, DialogThreadIdRecord_t* ListView
 					{
 						int LineNumber;
 						char FileName[MAX_PATH];
+						FileName[0] = 0;
 
-						// NOTE: LineNumber will be the source code line number right after the symbol name (typically this will be the opening brace of a function)
-						GetSourceCodeLineFromAddress((DWORD64)ListView_CallTreeRecord->Address, LineNumber, FileName, MAX_PATH);
-
-						extern char TextViewerFileName[];
-						extern TCHAR* TextViewerBuffer;
-						extern int TextViewBuffer_TotalSize;
-
-						SetFocus(hChildWindowTextViewer);  // set focus to text window to show the caret
-
-						if( _stricmp(FileName, TextViewerFileName) != 0 )
+						if( ListView_CallTreeRecord->SourceFileIndex >= 0 )
 						{
-							LoadTextFile(FileName);
+							std::map<DWORD, std::vector<std::string>>::iterator it = ThreadFileListMap.find(ListView_ThreadIdRecord->ThreadId);
+							std::vector<std::string>&FileList = it->second;
 
-							int text_length = GetWindowTextLength(hChildWindowTextViewer);
-							SendMessage(hChildWindowTextViewer, EM_SETSEL, 0, text_length);
-
-							SendMessage(hChildWindowTextViewer, EM_SETLIMITTEXT, TextViewBuffer_TotalSize, 0);
-
-							SendMessage(hChildWindowTextViewer, EM_REPLACESEL, 0, (LPARAM)TextViewerBuffer);  // replace the Edit control text with the source code file text
-						}
-
-						extern int TextWindowFontHeight;
-
-						int char_index = (int)SendMessage(hChildWindowTextViewer, EM_LINEINDEX, LineNumber - 1, 0);  // minus one because the EDIT window line numbers are zero-based
-						if( char_index >= 0 )
-						{
-							SendMessage(hChildWindowTextViewer, EM_SETSEL, char_index, char_index);
+							LineNumber = ListView_CallTreeRecord->SourceFileLineNumber;
+							strcpy_s(FileName, FileList[ListView_CallTreeRecord->SourceFileIndex].c_str());
 						}
 						else
 						{
-							SendMessage(hChildWindowTextViewer, EM_SETSEL, 0, 0);
+							// NOTE: LineNumber will be the source code line number right after the symbol name (typically this will be the opening brace of a function)
+							GetSourceCodeLineFromAddress((DWORD64)ListView_CallTreeRecord->Address, LineNumber, FileName, MAX_PATH);
 						}
 
-						SendMessage(hChildWindowTextViewer, EM_SCROLLCARET, 0, 0);
-
-						// get the height of the font
-						HDC hdc = GetDC(hChildWindowTextViewer);
-
-						TEXTMETRIC tm;
-						GetTextMetrics(hdc, &tm);
-
-						ReleaseDC(hChildWindowTextViewer, hdc);
-
-						// determine where this line is displayed within the window
-						LPARAM pos = SendMessage(hChildWindowTextViewer, EM_POSFROMCHAR, char_index, 0);
-						int y_pos = HIWORD(pos) - 1;  // make zero relative
-
-						// get the height of the text client window
-						RECT rect;
-						SendMessage(hChildWindowTextViewer, EM_GETRECT, 0, (LPARAM)&rect);
-						int client_height = rect.bottom - rect.top;
-
-						int client_num_lines = client_height / tm.tmAscent;  // why is this tmAscent and not tmHeight + tmExternalLeading?
-
-						// we want the symbol to be on line number 3
-						if( client_num_lines > 3 )
+						if( FileName[0] == 0 )  // do we not have a valid source code file?
 						{
-							int lines_to_scroll = (y_pos / tm.tmAscent) - 3;
+							// clear the source code text window
+							int text_length = GetWindowTextLength(hChildWindowTextViewer);
+							SendMessage(hChildWindowTextViewer, EM_SETSEL, 0, text_length);
+							SendMessage(hChildWindowTextViewer, EM_SETLIMITTEXT, 0, 0);
+							SendMessage(hChildWindowTextViewer, EM_REPLACESEL, 0, (LPARAM)NULL);
+						}
+						else
+						{
+							extern char TextViewerFileName[];
+							extern TCHAR* TextViewerBuffer;
+							extern int TextViewBuffer_TotalSize;
 
-							if( lines_to_scroll < 0 )
+							SetFocus(hChildWindowTextViewer);  // set focus to text window to show the caret
+
+							if( _stricmp(FileName, TextViewerFileName) != 0 )
 							{
-								for( int x = 0; x > lines_to_scroll; x-- )
-								{
-									SendMessage(hChildWindowTextViewer, EM_SCROLL, SB_LINEUP, 0);
-								}
+								LoadTextFile(FileName);
+
+								int text_length = GetWindowTextLength(hChildWindowTextViewer);
+								SendMessage(hChildWindowTextViewer, EM_SETSEL, 0, text_length);
+
+								SendMessage(hChildWindowTextViewer, EM_SETLIMITTEXT, TextViewBuffer_TotalSize, 0);
+
+								SendMessage(hChildWindowTextViewer, EM_REPLACESEL, 0, (LPARAM)TextViewerBuffer);  // replace the Edit control text with the source code file text
 							}
-							else if( lines_to_scroll > 0 )
+
+							extern int TextWindowFontHeight;
+
+							int char_index = (int)SendMessage(hChildWindowTextViewer, EM_LINEINDEX, LineNumber - 1, 0);  // minus one because the EDIT window line numbers are zero-based
+							if( char_index >= 0 )
 							{
-								for( int x = 0; x < lines_to_scroll; x++ )
+								SendMessage(hChildWindowTextViewer, EM_SETSEL, char_index, char_index);
+							}
+							else
+							{
+								SendMessage(hChildWindowTextViewer, EM_SETSEL, 0, 0);
+							}
+
+							SendMessage(hChildWindowTextViewer, EM_SCROLLCARET, 0, 0);
+
+							// get the height of the font
+							HDC hdc = GetDC(hChildWindowTextViewer);
+
+							TEXTMETRIC tm;
+							GetTextMetrics(hdc, &tm);
+
+							ReleaseDC(hChildWindowTextViewer, hdc);
+
+							// determine where this line is displayed within the window
+							LPARAM pos = SendMessage(hChildWindowTextViewer, EM_POSFROMCHAR, char_index, 0);
+							int y_pos = HIWORD(pos) - 1;  // make zero relative
+
+							// get the height of the text client window
+							RECT rect;
+							SendMessage(hChildWindowTextViewer, EM_GETRECT, 0, (LPARAM)&rect);
+							int client_height = rect.bottom - rect.top;
+
+							int client_num_lines = client_height / tm.tmAscent;  // why is this tmAscent and not tmHeight + tmExternalLeading?
+
+							// we want the symbol to be on line number 3
+							if( client_num_lines > 3 )
+							{
+								int lines_to_scroll = (y_pos / tm.tmAscent) - 3;
+
+								if( lines_to_scroll < 0 )
 								{
-									SendMessage(hChildWindowTextViewer, EM_SCROLL, SB_LINEDOWN, 0);
+									for( int x = 0; x > lines_to_scroll; x-- )
+									{
+										SendMessage(hChildWindowTextViewer, EM_SCROLL, SB_LINEUP, 0);
+									}
+								}
+								else if( lines_to_scroll > 0 )
+								{
+									for( int x = 0; x < lines_to_scroll; x++ )
+									{
+										SendMessage(hChildWindowTextViewer, EM_SCROLL, SB_LINEDOWN, 0);
+									}
 								}
 							}
 						}
 
 						SetFocus(hChildWindowFunctions);  // set focus back to ListView window
-
 
 						ListViewRowSelectedFunctions = row;  // remember which row was selected
 

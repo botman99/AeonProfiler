@@ -17,15 +17,17 @@ HMODULE ModuleHandle;
 
 DWORD ApplicationProcessId = 0;
 DWORD ApplicationThreadId = 0;
-HANDLE hProcessHandle = nullptr;
 
 __int64 ClockFreq;  // the frequency of this computers CPU clock
-int TicksPerHundredNanoseconds = 0;  // how many CPU ticks happen in 100 nanoseconds (divide ticks by this and then divide by 10000 to get milliseconds)
+__int64 ClockDivisor = 10000000;  // to convert from clock ticks to 100 nanosecond increments
+int TicksPerHundredNanoseconds = 0;  // how many CPU ticks happen in 100 nanoseconds (divide ticks by this and then divide by 10,000 to get milliseconds)
 
 HANDLE DialogThreadHandle = NULL;
 DWORD DialogThreadID;
 
 CDebugLog* gDebugLog = NULL;
+
+int* AeonWinExitPointer = nullptr;
 
 
 void WINAPI DialogThread(LPVOID lpData);
@@ -95,7 +97,7 @@ BOOL APIENTRY DllMain( HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReser
 			QueryPerformanceCounter((LARGE_INTEGER*)&Counter_After);
 
 			ClockFreq = Counter_Freq * (RDTSC_After - RDTSC_Before) / (Counter_After - Counter_Before);
-			TicksPerHundredNanoseconds = (int)(ClockFreq / 10000000);
+			TicksPerHundredNanoseconds = (int)(ClockFreq / ClockDivisor);
 
 			DialogCallTreeThreadId = ApplicationThreadId;  // get the current thread id (this should be "main()" or "WinMain()")
 
@@ -120,7 +122,7 @@ BOOL APIENTRY DllMain( HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReser
 
 			if( DialogThreadHandle )
 			{
-				if (WaitForSingleObject(DialogThreadHandle, INFINITE) == WAIT_TIMEOUT)
+				if( WaitForSingleObject(DialogThreadHandle, INFINITE) == WAIT_TIMEOUT )
 				{
 					TerminateThread(DialogThreadHandle, 0);
 				}
@@ -138,4 +140,17 @@ BOOL APIENTRY DllMain( HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReser
 	}
 
 	return TRUE;
+}
+
+extern "C"
+{
+	__declspec(dllexport) void AeonWinCallbackFunc(int* InExitApplication)
+	{
+		AeonWinExitPointer = InExitApplication;
+
+		if( AeonWinExitPointer )
+		{
+			*AeonWinExitPointer = 0;
+		}
+	}
 }

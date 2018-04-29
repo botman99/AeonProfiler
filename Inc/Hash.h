@@ -255,7 +255,7 @@ public:
 			pHashRecord = pHashRecord->Next;
 		}
 
-		if (LinkedListLength > MaxListLength)
+		if( LinkedListLength > MaxListLength )
 		{
 			MaxListLength = LinkedListLength;
 		}
@@ -323,7 +323,7 @@ public:
 		T** LookupResultPtr = LookupPointer(InPointer);
 		T* LookupResult = *LookupResultPtr;
 		bool newResult = false;
-		if (LookupResult == nullptr)
+		if( LookupResult == nullptr )
 		{
 			LookupResult = HashAllocator->New<T>();
 			*LookupResultPtr = LookupResult;
@@ -332,32 +332,15 @@ public:
 		return std::make_pair(newResult, LookupResult);
 	}
 
-	// TODO: Variadic templates
-	template<typename Arg1>
-	std::pair<bool, T *> EmplaceIfNecessary(const void* InPointer, Arg1 && arg1)
+	template<typename... ArgTypes>
+	std::pair<bool, T*> EmplaceIfNecessary(const void* InPointer, ArgTypes... Args)
 	{
 		T** LookupResultPtr = LookupPointer(InPointer);
 		T* LookupResult = *LookupResultPtr;
 		bool newResult = false;
-		if (LookupResult == nullptr)
+		if( LookupResult == nullptr )
 		{
-			LookupResult = HashAllocator->New<T>(std::forward<Arg1>(arg1));
-			*LookupResultPtr = LookupResult;
-			newResult = true;
-		}
-		return std::make_pair(newResult, LookupResult);
-	}
-
-	// TODO: Variadic templates
-	template<typename Arg1, typename Arg2>
-	std::pair<bool, T *> EmplaceIfNecessary(const void* InPointer, Arg1 && arg1, Arg2 && arg2)
-	{
-		T** LookupResultPtr = LookupPointer(InPointer);
-		T* LookupResult = *LookupResultPtr;
-		bool newResult = false;
-		if (LookupResult == nullptr)
-		{
-			LookupResult = HashAllocator->New<T>(std::forward<Arg1>(arg1), std::forward<Arg2>(arg2));
+			LookupResult = HashAllocator->New<T>(std::forward<ArgTypes>(Args)...);
 			*LookupResultPtr = LookupResult;
 			newResult = true;
 		}
@@ -399,7 +382,7 @@ public:
 					pHashRecord = pHashRecord->Next;
 				}
 
-				if (LinkedListLength > MaxListLength)
+				if( LinkedListLength > MaxListLength )
 				{
 					MaxListLength = LinkedListLength;
 				}

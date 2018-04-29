@@ -7,11 +7,14 @@
 #include <windowsx.h>
 #include <TlHelp32.h>
 #include <Shlwapi.h>
+#include <map>
+#include <vector>
 
 #include "Splitter.h"
 #include "Dialog.h"
 #include "TextViewer.h"
 #include "Config.h"
+#include "Repository.h"
 
 #include "DebugLog.h"
 
@@ -23,15 +26,23 @@ extern CAllocator TextViewerAllocator;
 
 extern TextLineBuffer line_buffer;
 
+extern int* AeonWinExitPointer;
+
 // Global Variables:
 HINSTANCE hInst;								// current instance
 TCHAR szTitle[MAX_LOADSTRING];					// The title bar text
 TCHAR szWindowClass[MAX_LOADSTRING];			// the main window class name
 
+WCHAR SaveLoadFilename[MAX_PATH];
+WCHAR SaveLoadErrorMsg[256];
+
 CConfig* gConfig = nullptr;
 
 int NumThreads;  // for stat tracking
 int NumCallTreeRecords;  // for stat tracking
+
+std::map<DWORD, std::vector<std::string>> ThreadFileListMap;  // map from ThreadId to array of filenames
+
 
 // child windows
 HWND hChildWindowFunctions;
@@ -43,28 +54,48 @@ HWND ghWnd;  // global hWnd for application window (so we can set the window tex
 HWND ghDialogWnd;  // global hWnd for the main dialog
 HWND ghLookupSymbolsModalDialogWnd;  // global hWnd for the 'LookupSymbols' dialog
 HWND ghFindSymbolDialogParent;  // global hWnd for the ListView used to call FindSymbolModalDialog() since WS_POPUP windows won't have the proper Parent set
+HWND ghPleaseWaitModalDialogWnd;  // global hWnd for the "Please wait..." modal dialog
+HWND ghPleaseWaitNotifyWnd;  // global hWnd for the "Please wait..." modal dialog to know who to route the DONE message to (for qsort)
 
 HANDLE ProcessCallTreeDataThreadHandle = NULL;
 DWORD ProcessCallTreeDataThreadID = 0;
 bool bIsCaptureInProgress = false;  // don't allow a capture to start while one is already in progress
 
+HANDLE SaveProfilerDataThreadHandle = NULL;
+DWORD SaveProfilerDataThreadID = 0;
+HANDLE LoadProfilerDataThreadHandle = NULL;
+DWORD LoadProfilerDataThreadID = 0;
+HANDLE ListViewNotifyQsortThreadHandle = NULL;
+DWORD ListViewNotifyQsortThreadID = 0;
+HANDLE DisplayCallTreeDataQsortThreadHandle = NULL;
+DWORD DisplayCallTreeDataQsortThreadID = 0;
+
 DWORD DialogCallTreeThreadId;  // the thread id of the thread to display CallTree data for in the ListView dialog
 
+bool bDisableThreadIdCancelButton = false;
 
-BOOL InitInstance(HINSTANCE hInstance, int nCmdShow);
+ePleaseWaitType PleaseWaitType;
+
+bool bIsLoadingProfilerData = false;
+
+int gFindSymbolNumberOfRows;
+
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 LRESULT CALLBACK WndProcLeftChildren(HWND, UINT, WPARAM, LPARAM);
 LRESULT CALLBACK WndProcRightChildren(HWND, UINT, WPARAM, LPARAM);
 LRESULT CALLBACK WndEditSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData);
 LRESULT CALLBACK WndListViewSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData);
 
+void WINAPI SaveProfilerDataThread(LPVOID lpData);
+void WINAPI LoadProfilerDataThread(LPVOID lpData);
+void WINAPI ListViewNotifyQsortThread(LPVOID lpData);
+void WINAPI DisplayCallTreeDataQsortThread(LPVOID lpData);
+
 
 void WINAPI DialogThread(LPVOID lpData)
 {
 	MSG msg;
 	HACCEL hAccelTable;
-
-	int nCmdShow = SW_SHOW;
 
 	hInst = (HINSTANCE)ModuleHandle;
 
@@ -93,7 +124,7 @@ void WINAPI DialogThread(LPVOID lpData)
 	// Main message loop:
 	while (GetMessage(&msg, NULL, 0, 0))
 	{
-		if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg))
+		if( !TranslateAccelerator(msg.hwnd, hAccelTable, &msg) )
 		{
 			TranslateMessage(&msg);
 			DispatchMessage(&msg);
@@ -103,6 +134,11 @@ void WINAPI DialogThread(LPVOID lpData)
 	if( hApplicationProcess )
 	{
 		CloseHandle(hApplicationProcess);
+	}
+
+	if( AeonWinExitPointer )
+	{
+		*AeonWinExitPointer = 1;
 	}
 }
 
@@ -131,6 +167,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				if( SetTimer(hWnd, 1, 100, NULL) == 0)  // set a timer to occur every 100ms
 				{
 					DebugLog("SetTimer() failed, GetLastError() = %d", GetLastError());
+				}
+
+				HMENU hMenu = GetMenu(hWnd);
+				if( AeonWinExitPointer != nullptr )  // if running standalone AeonWin application...
+				{
+					EnableMenuItem(GetSubMenu(hMenu, 0), IDM_SAVE, MF_DISABLED | MF_GRAYED);  // disable the File -> Save menu item
+				}
+				else
+				{
+					EnableMenuItem(GetSubMenu(hMenu, 0), IDM_LOAD, MF_DISABLED | MF_GRAYED);  // disable the File -> Load menu item
 				}
 
 				ghDialogWnd = hWnd;  // save this dialog's handle so that other dialogs and threads can send it messages
@@ -189,7 +235,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			break;
 
 		case WM_SETFOCUS:
-			ListViewSetFocus(hWnd);
+			{
+				ListViewSetFocus(hWnd);
+			}
 			break;
 
 		case WM_TIMER:
@@ -206,6 +254,96 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 				switch( wmId )
 				{
+					case IDM_SAVE:
+						{
+							if( (AeonWinExitPointer == nullptr) && (CaptureCallTreeThreadArraySize != 0) )
+							{
+								SYSTEMTIME sysTime;
+								GetLocalTime(&sysTime);
+
+								WCHAR wApplicationName[MAX_PATH];
+								wcscpy_s(wApplicationName, app_filename);
+								PathStripPath(wApplicationName);
+
+								TCHAR buffer[MAX_PATH];
+								swprintf(buffer, MAX_PATH-1, TEXT("\\%s-%4d-%02d-%02d_%02d-%02d-%02d.aeon"), 
+									wApplicationName, sysTime.wYear, sysTime.wMonth, sysTime.wDay, sysTime.wHour, sysTime.wMinute, sysTime.wSecond);
+
+								wcscpy_s(SaveLoadFilename, app_filename);
+								PathRemoveFileSpec(SaveLoadFilename);
+								wcscat_s(SaveLoadFilename, buffer);
+
+								WCHAR Filter[] = TEXT("Aeon Profiler Files (*.aeon)\0*.aeon\0All Files (*.*)\0*.*\0\0");
+
+								OPENFILENAME Ofn = {sizeof(OPENFILENAME)};
+
+								Ofn.hwndOwner = hWnd;
+								Ofn.hInstance = hInst;
+								Ofn.lpstrFilter = Filter;
+								Ofn.lpstrCustomFilter = NULL;
+								Ofn.lpstrFile = SaveLoadFilename;
+								Ofn.nMaxFile = MAX_PATH;
+								Ofn.lpstrFileTitle = NULL;
+								Ofn.lpstrInitialDir = NULL;
+								Ofn.lpstrTitle = TEXT("Save AeonProfiler saved profile");
+								Ofn.Flags = 0;
+								Ofn.lpfnHook = NULL;
+								Ofn.lpTemplateName = NULL;
+
+								if( GetSaveFileName(&Ofn) )
+								{
+									PleaseWaitType = PleaseWait_SavingProfilerData;
+
+									DialogBox(hInst, MAKEINTRESOURCE(IDD_PLEASEWAIT), hWnd, PleaseWaitModalDialog);
+								}
+								else
+								{
+									DWORD err = CommDlgExtendedError();
+								}
+							}
+							else
+							{
+								MessageBox(hWnd, TEXT("You have to capture data before you can save profiler data."), TEXT("Warning"), MB_OK | MB_ICONWARNING);
+							}
+						}
+						break;
+
+					case IDM_LOAD:
+						{
+							WCHAR Filter[] = TEXT("Aeon Profiler Files (*.aeon)\0*.aeon\0All Files (*.*)\0*.*\0\0");
+
+							OPENFILENAME Ofn = {sizeof(OPENFILENAME)};
+
+							Ofn.hwndOwner = hWnd;
+							Ofn.hInstance = hInst;
+							Ofn.lpstrFilter = Filter;
+							Ofn.lpstrCustomFilter = NULL;
+							Ofn.lpstrFile = SaveLoadFilename;
+							Ofn.nMaxFile = MAX_PATH;
+							Ofn.lpstrFileTitle = NULL;
+							Ofn.lpstrInitialDir = NULL;
+							Ofn.lpstrTitle = TEXT("Load AeonProfiler saved profile");
+							Ofn.Flags = 0;
+							Ofn.lpfnHook = NULL;
+							Ofn.lpTemplateName = NULL;
+
+							SaveLoadFilename[0] = 0;
+
+							if( GetOpenFileName(&Ofn) )
+							{
+								bIsLoadingProfilerData = true;
+
+								PleaseWaitType = PleaseWait_LoadingProfilerData;
+
+								DialogBox(hInst, MAKEINTRESOURCE(IDD_PLEASEWAIT), hWnd, PleaseWaitModalDialog);
+							}
+							else
+							{
+								DWORD err = CommDlgExtendedError();
+							}
+						}
+						break;
+
 					case IDM_STATS:
 						{
 							DialogBox(hInst, MAKEINTRESOURCE(IDD_STATS), hWnd, StatsModalDialog);
@@ -219,13 +357,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 					case IDM_CAPTURE:
 						{
-							if( !bIsCaptureInProgress )  // is a capture not already in progress?
+							if( !bIsCaptureInProgress && (AeonWinExitPointer == nullptr) )  // is a capture not already in progress and not running standalone AeonWin application?
 							{
 								bIsCaptureInProgress = true;
 
 								int NumSymbolsToLookup = CaptureCallTreeData();
 
 								ghLookupSymbolsModalDialogWnd = 0;
+
+								ThreadFileListMap.clear();
 
 								// if there's a lot of symbols to look up, display a dialog box with the progress...
 								if( NumSymbolsToLookup > 1000 )
@@ -242,7 +382,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 					case IDM_RESET:
 						{
-							DialogBox(hInst, MAKEINTRESOURCE(IDD_RESETID), hWnd, ResetModalDialog);
+							if( AeonWinExitPointer == nullptr )  // only reset if not running standalone AeonWin application
+							{
+								DialogBox(hInst, MAKEINTRESOURCE(IDD_RESETID), hWnd, ResetModalDialog);
+							}
 						}
 						break;
 
@@ -259,19 +402,73 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			break;
 
 		case WM_CAPTURECALLTREEDONE:
-			bIsCaptureInProgress = false;
+			{
+				bIsCaptureInProgress = false;
+				bIsLoadingProfilerData = false;
 
-			CloseHandle(ProcessCallTreeDataThreadHandle);
+				CloseHandle(ProcessCallTreeDataThreadHandle);
 
-			PostMessage(ghDialogWnd, WM_DISPLAYCALLTREEDATA, 0, 0);
+				PostMessage(ghDialogWnd, WM_DISPLAYCALLTREEDATA, 0, 0);
+			}
 			break;
 
 		case WM_DISPLAYCALLTREEDATA:
-			DisplayCallTreeData();
+			{
+				DisplayCallTreeData();
+			}
+			break;
+
+		case WM_DISPLAYCALLTREEDATA_QSORT_DONE:
+			{
+				extern DialogThreadIdRecord_t* gDisplayCallTreeData_ListView_ThreadIdRecordForQSort;
+				ListView_SetItemCount(hChildWindowFunctions, gDisplayCallTreeData_ListView_ThreadIdRecordForQSort->CallTreeArraySize);
+
+				InvalidateRect(hChildWindowFunctions, NULL, FALSE);
+
+				// ...and select the topmost item by default (for the middle child window)
+				ListViewSetRowSelected(hChildWindowFunctions, 0, gDisplayCallTreeData_ListView_ThreadIdRecordForQSort, false);
+
+				ListViewSetFocus(hChildWindowFunctions);
+			}
+			break;
+
+		case WM_SAVEPROFILEDATADONE:
+			{
+				if( SaveLoadErrorMsg[0] != 0 )
+				{
+					MessageBox(hWnd, SaveLoadErrorMsg, TEXT("Save Profiler Data Error"), MB_OK | MB_ICONERROR);
+				}
+			}
+			break;
+
+		case WM_LOADPROFILEDATADONE:
+			{
+				if( SaveLoadErrorMsg[0] != 0 )
+				{
+					bIsLoadingProfilerData = false;
+
+					MessageBox(hWnd, SaveLoadErrorMsg, TEXT("Load Profiler Data Error"), MB_OK | MB_ICONERROR);
+				}
+				else
+				{
+					extern int CaptureCallTreeSymbolsToInitialize;
+					CaptureCallTreeSymbolsToInitialize = 0;
+
+					ghLookupSymbolsModalDialogWnd = 0;
+
+					int NumSymbolsToLookup = 0;
+
+					DialogCallTreeThreadId = 0;  // force the user to pick the thread to display
+
+					ProcessCallTreeDataThreadHandle = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)ProcessCallTreeDataThread, NULL, 0, &ProcessCallTreeDataThreadID);
+				}
+			}
 			break;
 
 		case WM_DESTROY:
-			PostQuitMessage(0);
+			{
+				PostQuitMessage(0);
+			}
 			break;
 
 		default:
@@ -328,7 +525,29 @@ LRESULT CALLBACK WndProcLeftChildren(HWND hWnd, UINT message, WPARAM wParam, LPA
 			break;
 
 		case WM_NOTIFY:
-			ListViewNotify(hWnd, lParam);
+			if( !bIsLoadingProfilerData )
+			{
+				ListViewNotify(hWnd, lParam);
+			}
+			break;
+
+		case WM_QSORT_DONE:
+			{
+				extern const void* gRowCallTreeAddressForQsort;
+				if( gRowCallTreeAddressForQsort )
+				{
+					ListViewRowSelectedFunctions = FindRowForAddress(hChildWindowFunctions, gRowCallTreeAddressForQsort);
+
+					if( ListViewRowSelectedFunctions != -1 )
+					{
+						ListView_SetItemState(hChildWindowFunctions, ListViewRowSelectedFunctions, LVIS_FOCUSED | LVIS_SELECTED, 0x000F);
+						ListView_EnsureVisible(hChildWindowFunctions, ListViewRowSelectedFunctions, FALSE);
+					}
+				}
+
+				extern HWND ghWndFromforQsort;
+				InvalidateRect(ghWndFromforQsort, NULL, FALSE);
+			}
 			break;
 
 		default:
@@ -897,8 +1116,15 @@ BOOL CenterWindow (HWND hWnd)
     xNew = wParent/2 - w/2 + rParentRect.left;
     yNew = hParent/2 - h/2 + rParentRect.top;
 
-    if (xNew < 0) xNew = 0;
-    if (yNew < 0) yNew = 0;
+    if( xNew < 0 )
+	{
+		xNew = 0;
+	}
+
+    if( yNew < 0 )
+	{
+		yNew = 0;
+	}
 
     return SetWindowPos (hWnd, NULL, xNew, yNew, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
 }
@@ -993,6 +1219,65 @@ void ConvertTCHARtoCHAR(TCHAR* InBuffer, char* OutBuffer, unsigned int OutBuffer
 	wcstombs_s(&num_chars, OutBuffer, OutBufferSize, InBuffer, wlen);
 }
 
+INT_PTR CALLBACK PleaseWaitModalDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
+{
+	switch (message)
+	{
+		case WM_INITDIALOG:
+			ghPleaseWaitModalDialogWnd = hDlg;
+
+			CenterWindow(hDlg);
+
+			if( PleaseWaitType == PleaseWait_SavingProfilerData )
+			{
+				SaveProfilerDataThreadHandle = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)SaveProfilerDataThread, NULL, 0, &SaveProfilerDataThreadID);
+			}
+			else if( PleaseWaitType == PleaseWait_LoadingProfilerData )
+			{
+				LoadProfilerDataThreadHandle = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)LoadProfilerDataThread, NULL, 0, &LoadProfilerDataThreadID);
+			}
+			else if( PleaseWaitType == PleaseWait_ListViewNotifySort )
+			{
+				ListViewNotifyQsortThreadHandle = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)ListViewNotifyQsortThread, NULL, 0, &ListViewNotifyQsortThreadID);
+			}
+			else if( PleaseWaitType == PleaseWait_DisplayCallTreeDataSort )
+			{
+				DisplayCallTreeDataQsortThreadHandle = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)DisplayCallTreeDataQsortThread, NULL, 0, &DisplayCallTreeDataQsortThreadID);
+			}
+
+			return (INT_PTR)TRUE;
+
+		case WM_PLEASEWAITDONE:
+
+			if( PleaseWaitType == PleaseWait_SavingProfilerData )
+			{
+				CloseHandle(SaveProfilerDataThreadHandle);
+				PostMessage(ghDialogWnd, WM_SAVEPROFILEDATADONE, 0, 0);
+			}
+			else if( PleaseWaitType == PleaseWait_LoadingProfilerData )
+			{
+				CloseHandle(LoadProfilerDataThreadHandle);
+				PostMessage(ghDialogWnd, WM_LOADPROFILEDATADONE, 0, 0);
+			}
+			else if( PleaseWaitType == PleaseWait_ListViewNotifySort )
+			{
+				CloseHandle(ListViewNotifyQsortThreadHandle);
+				PostMessage(ghPleaseWaitNotifyWnd, WM_QSORT_DONE, 0, 0);
+			}
+			else if( PleaseWaitType == PleaseWait_DisplayCallTreeDataSort )
+			{
+				CloseHandle(DisplayCallTreeDataQsortThreadHandle);
+				PostMessage(ghDialogWnd, WM_DISPLAYCALLTREEDATA_QSORT_DONE, 0, 0);
+			}
+
+			EndDialog(hDlg, LOWORD(wParam));
+
+			return (INT_PTR)TRUE;
+	}
+
+	return (INT_PTR)FALSE;
+}
+
 INT_PTR CALLBACK LookupSymbolsModalDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	switch (message)
@@ -1067,7 +1352,7 @@ INT_PTR CALLBACK ThreadIdModalDialog(HWND hDlg, UINT message, WPARAM wParam, LPA
 
 				// get the list of threads running in this process
 				HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
-				if (hSnapshot != INVALID_HANDLE_VALUE)
+				if( hSnapshot != INVALID_HANDLE_VALUE )
 				{
 					THREADENTRY32 te;
 					te.dwSize = sizeof(te);
@@ -1096,6 +1381,8 @@ INT_PTR CALLBACK ThreadIdModalDialog(HWND hDlg, UINT message, WPARAM wParam, LPA
 				int max_len = 0;
 				size_t buffer_len = _countof(buffer);
 				size_t wSymbolName_len = _countof(wSymbolName);
+
+				bool bListBoxContainsItems = false;
 
 				// populate the ListBox
 				for( unsigned int ThreadIndex = 0; ThreadIndex < CaptureCallTreeThreadArraySize; ThreadIndex++ )
@@ -1127,7 +1414,7 @@ INT_PTR CALLBACK ThreadIdModalDialog(HWND hDlg, UINT message, WPARAM wParam, LPA
 							mbstowcs_s(&num_chars, wSymbolName, wSymbolName_len, ThreadRec->SymbolName, len);
 							wSymbolName[num_chars] = 0;
 
-							swprintf(buffer, buffer_len, TEXT("%s (ThreadId = %d)"), wSymbolName, ThreadRec->ThreadId);
+							swprintf(buffer, buffer_len, TEXT("%s (ThreadId = %d), CallTreeRecords = %d"), wSymbolName, ThreadRec->ThreadId, ThreadRec->CallTreeArraySize);
 
 							int listbox_index = (int)SendDlgItemMessage(hDlg, IDC_THREADID_LIST, LB_ADDSTRING, 0, (LPARAM)buffer);
 							SendDlgItemMessage(hDlg, IDC_THREADID_LIST, LB_SETITEMDATA, (WPARAM)listbox_index, (LPARAM)ThreadRec);  // store the DialogThreadIdRecord_t so get can get it later
@@ -1140,11 +1427,22 @@ INT_PTR CALLBACK ThreadIdModalDialog(HWND hDlg, UINT message, WPARAM wParam, LPA
 							{
 								max_len = size.cx;
 							}
+
+							bListBoxContainsItems = true;
 						}
 					}
 				}
 
-				SendDlgItemMessage( hDlg, IDC_THREADID_LIST, LB_SETHORIZONTALEXTENT, max_len + tm.tmAveCharWidth, 0);
+				SendDlgItemMessage(hDlg, IDC_THREADID_LIST, LB_SETCURSEL, 0, 0);
+				SendDlgItemMessage(hDlg, IDC_THREADID_LIST, LB_SETHORIZONTALEXTENT, max_len + tm.tmAveCharWidth, 0);
+
+				if( bDisableThreadIdCancelButton && bListBoxContainsItems )
+				{
+					HWND hCancel = GetDlgItem(hDlg, IDCANCEL);
+					Button_Enable(hCancel, false);
+				}
+
+				bDisableThreadIdCancelButton = false;  // reset this each time the dialog is displayed
 
 				ReleaseDC( hDlg, hDC );
 
@@ -1182,6 +1480,67 @@ INT_PTR CALLBACK ThreadIdModalDialog(HWND hDlg, UINT message, WPARAM wParam, LPA
 
 #define MAX_FUNCTION_NAME_LEN 2048
 
+void PopulateFindSymbolListBox(HWND hDlg, char* InputText)
+{
+	HWND hWndList = GetDlgItem(hDlg, IDC_FUNCTIONLIST);
+	SendMessage(hWndList, LB_RESETCONTENT, 0, 0);  // clear the ListBox by default
+
+	if( InputText[0] == 0 )
+	{
+		return;
+	}
+
+	HDC hDC = GetDC( hDlg );
+	SelectObject(hDC, (HFONT)SendDlgItemMessage(hDlg, IDC_FUNCTIONLIST, WM_GETFONT, NULL, NULL));
+
+	TEXTMETRIC tm;
+	GetTextMetrics( hDC, &tm );
+
+	bool case_sensitive = (IsDlgButtonChecked(hDlg, IDC_CASE_SENSITIVE) == BST_CHECKED);
+
+	int max_len = 0;
+
+	SendMessage(hWndList, WM_SETREDRAW, FALSE, 0);
+
+	TCHAR wbuffer[MAX_FUNCTION_NAME_LEN];
+
+	for( int row = 0; row < gFindSymbolNumberOfRows; ++row )
+	{
+		DialogCallTreeRecord_t* ListView_record = GetListViewRecordForRow(ghFindSymbolDialogParent, row);
+
+		size_t len = strlen(ListView_record->SymbolName);
+
+		if( (case_sensitive && (StrStrA(ListView_record->SymbolName, InputText) != 0)) ||
+			(!case_sensitive && (StrStrIA(ListView_record->SymbolName, InputText) != 0)) )
+		{
+			size_t len = min(MAX_FUNCTION_NAME_LEN, strlen(ListView_record->SymbolName));
+			size_t num_chars;
+
+			mbstowcs_s(&num_chars, wbuffer, MAX_FUNCTION_NAME_LEN, ListView_record->SymbolName, len);
+
+			int pos = (int)SendMessage(hWndList, LB_ADDSTRING, 0, (LPARAM)wbuffer);
+			SendMessage(hWndList, LB_SETITEMDATA, pos, (LPARAM)row);
+
+			len = wcslen(wbuffer);
+
+			SIZE size;
+			GetTextExtentPoint32(hDC, wbuffer, (int)len, &size);
+
+			if( size.cx > max_len )
+			{
+				max_len = size.cx;
+			}
+		}
+	}
+
+	SendMessage(hWndList, WM_SETREDRAW, TRUE, 0);
+
+	SendDlgItemMessage( hDlg, IDC_FUNCTIONLIST, LB_SETHORIZONTALEXTENT, max_len + tm.tmAveCharWidth, 0);
+
+	ReleaseDC( hDlg, hDC );
+}
+
+
 INT_PTR CALLBACK FindSymbolModalDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	switch (message)
@@ -1210,6 +1569,34 @@ INT_PTR CALLBACK FindSymbolModalDialog(HWND hDlg, UINT message, WPARAM wParam, L
 				HWND hWndEditControl = GetDlgItem(hDlg, IDC_FUNCTIONNAME);
 				SetFocus(hWndEditControl);  // automatically set focus to the edit control for the function name
 
+				gFindSymbolNumberOfRows = 0;
+
+				if( DialogListViewThreadIndex != -1 )
+				{
+					DialogThreadIdRecord_t* ListView_thread_record = (DialogThreadIdRecord_t*)CaptureCallTreeThreadArrayPointer[DialogListViewThreadIndex];
+					assert(ListView_thread_record);
+
+					// determine the number of rows and set the length of the header text for the function category
+					if( ghFindSymbolDialogParent == hChildWindowFunctions )
+					{
+						gFindSymbolNumberOfRows = ListView_thread_record->CallTreeArraySize;
+					}
+					else if( ghFindSymbolDialogParent == hChildWindowParentFunctions )
+					{
+						DialogCallTreeRecord_t* ListView_CallTreeRecord = (DialogCallTreeRecord_t*)ListView_thread_record->CallTreeArray[ListViewRowSelectedFunctions];
+						assert(ListView_CallTreeRecord);
+
+						gFindSymbolNumberOfRows =  ListView_CallTreeRecord->ParentArraySize;
+					}
+					else if( ghFindSymbolDialogParent == hChildWindowChildrenFunctions )
+					{
+						DialogCallTreeRecord_t* ListView_CallTreeRecord = (DialogCallTreeRecord_t*)ListView_thread_record->CallTreeArray[ListViewRowSelectedFunctions];
+						assert(ListView_CallTreeRecord);
+
+						gFindSymbolNumberOfRows =  ListView_CallTreeRecord->ChildrenArraySize;
+					}
+				}
+
 				return (INT_PTR)TRUE;
 			}
 
@@ -1217,135 +1604,61 @@ INT_PTR CALLBACK FindSymbolModalDialog(HWND hDlg, UINT message, WPARAM wParam, L
 
 		case WM_COMMAND:
 			{
-				switch(LOWORD(wParam))
+				if( ((HIWORD(wParam) == EN_CHANGE) && (LOWORD(wParam) == IDC_FUNCTIONNAME)) ||  // if we modified the "Function Name" edit control...
+					((HIWORD(wParam) == BN_CLICKED) && (LOWORD(wParam) == IDC_CASE_SENSITIVE)) )  // ...or if we changed the "Case Sensitive" checkbox
 				{
-					case IDOK:  // Enter was pressed in the "Enter Function Name to search for" edit control
+					// redraw the matching function names in the ListBox
+
+					TCHAR wbuffer[MAX_FUNCTION_NAME_LEN];
+					GetDlgItemText(hDlg, IDC_FUNCTIONNAME, wbuffer, _countof(wbuffer));
+
+					char buffer[MAX_FUNCTION_NAME_LEN];
+					ConvertTCHARtoCHAR(wbuffer, buffer, sizeof(buffer));
+
+					PopulateFindSymbolListBox(hDlg, buffer);
+				}
+				else
+				{
+					switch(LOWORD(wParam))
 					{
-						if( DialogListViewThreadIndex >= 0 )
+						case IDSELECT:
 						{
+							if( gConfig )
+							{
+								UINT checked = (int)IsDlgButtonChecked(hDlg, IDC_CASE_SENSITIVE);
+								gConfig->SetInt(CONFIG_FIND_FUNCTION_CASE_SENSITIVE, (checked == BST_CHECKED));
+							}
+
 							HWND hWndList = GetDlgItem(hDlg, IDC_FUNCTIONLIST);
-							SendMessage(hWndList, LB_RESETCONTENT, 0, 0);
 
-							HDC hDC = GetDC( hDlg );
-							SelectObject(hDC, (HFONT)SendDlgItemMessage(hDlg, IDC_FUNCTIONLIST, WM_GETFONT, NULL, NULL));
+							int item = (int)SendMessage(hWndList, LB_GETCURSEL, 0, 0);
+							int row = (int)SendMessage(hWndList, LB_GETITEMDATA, item, 0);
 
-							TEXTMETRIC tm;
-							GetTextMetrics( hDC, &tm );
-
-							DialogThreadIdRecord_t* ListView_thread_record = (DialogThreadIdRecord_t*)CaptureCallTreeThreadArrayPointer[DialogListViewThreadIndex];
-							assert(ListView_thread_record);
-
-							int number_rows = 0;
-
-							// determine the number of rows and set the length of the header text for the function category
-							if( ghFindSymbolDialogParent == hChildWindowFunctions )
-							{
-								number_rows = ListView_thread_record->CallTreeArraySize;
-							}
-							else if( ghFindSymbolDialogParent == hChildWindowParentFunctions )
-							{
-								DialogCallTreeRecord_t* ListView_CallTreeRecord = (DialogCallTreeRecord_t*)ListView_thread_record->CallTreeArray[ListViewRowSelectedFunctions];
-								assert(ListView_CallTreeRecord);
-
-								number_rows =  ListView_CallTreeRecord->ParentArraySize;
-							}
-							else if( ghFindSymbolDialogParent == hChildWindowChildrenFunctions )
-							{
-								DialogCallTreeRecord_t* ListView_CallTreeRecord = (DialogCallTreeRecord_t*)ListView_thread_record->CallTreeArray[ListViewRowSelectedFunctions];
-								assert(ListView_CallTreeRecord);
-
-								number_rows =  ListView_CallTreeRecord->ChildrenArraySize;
-							}
-
-							TCHAR wbuffer[MAX_FUNCTION_NAME_LEN];
-							GetDlgItemText(hDlg, IDC_FUNCTIONNAME, wbuffer, _countof(wbuffer));
-
-							char buffer[MAX_FUNCTION_NAME_LEN];
-							ConvertTCHARtoCHAR(wbuffer, buffer, sizeof(buffer));
-
-							bool case_sensitive = (IsDlgButtonChecked(hDlg, IDC_CASE_SENSITIVE) == BST_CHECKED);
-
-							bool bWasMatchFound = false;
-							int max_len = 0;
-
-							for( int row = 0; row < number_rows; ++row )
-							{
-								DialogCallTreeRecord_t* ListView_record = GetListViewRecordForRow(ghFindSymbolDialogParent, row);
-
-								size_t len = strlen(ListView_record->SymbolName);
-
-								if( (case_sensitive && (StrStrA(ListView_record->SymbolName, buffer) != 0)) ||
-									(!case_sensitive && (StrStrIA(ListView_record->SymbolName, buffer) != 0)) )
-								{
-									bWasMatchFound = true;
-
-									size_t len = min(MAX_FUNCTION_NAME_LEN, strlen(ListView_record->SymbolName));
-									size_t num_chars;
-
-									mbstowcs_s(&num_chars, wbuffer, MAX_FUNCTION_NAME_LEN, ListView_record->SymbolName, len);
-
-									int pos = (int)SendMessage(hWndList, LB_ADDSTRING, 0, (LPARAM)wbuffer);
-									SendMessage(hWndList, LB_SETITEMDATA, pos, (LPARAM)row);
-
-									len = wcslen(wbuffer);
-
-									SIZE size;
-									GetTextExtentPoint32(hDC, wbuffer, (int)len, &size);
-
-									if( size.cx > max_len )
-									{
-										max_len = size.cx;
-									}
-								}
-							}
-
-							SendDlgItemMessage( hDlg, IDC_FUNCTIONLIST, LB_SETHORIZONTALEXTENT, max_len + tm.tmAveCharWidth, 0);
-
-							ReleaseDC( hDlg, hDC );
-
-							EnableWindow( GetDlgItem(hDlg, IDSELECT), bWasMatchFound ? TRUE : FALSE);
+							EndDialog(hDlg, row);
+							return (INT_PTR)TRUE;
 						}
 
-						return (INT_PTR)TRUE;
-					}
-
-					case IDSELECT:
-					{
-						if( gConfig )
+						case IDCANCEL:
 						{
-							UINT checked = (int)IsDlgButtonChecked(hDlg, IDC_CASE_SENSITIVE);
-							gConfig->SetInt(CONFIG_FIND_FUNCTION_CASE_SENSITIVE, (checked == BST_CHECKED));
+							if( gConfig )
+							{
+								UINT checked = (int)IsDlgButtonChecked(hDlg, IDC_CASE_SENSITIVE);
+								gConfig->SetInt(CONFIG_FIND_FUNCTION_CASE_SENSITIVE, (checked == BST_CHECKED));
+							}
+
+							EndDialog(hDlg, -1);
+							return (INT_PTR)TRUE;
 						}
 
-						HWND hWndList = GetDlgItem(hDlg, IDC_FUNCTIONLIST);
-
-						int item = (int)SendMessage(hWndList, LB_GETCURSEL, 0, 0);
-						int row = (int)SendMessage(hWndList, LB_GETITEMDATA, item, 0);
-
-						EndDialog(hDlg, row);
-						return (INT_PTR)TRUE;
-					}
-
-					case IDCANCEL:
-					{
-						if( gConfig )
+						case IDC_FUNCTIONLIST:
 						{
-							UINT checked = (int)IsDlgButtonChecked(hDlg, IDC_CASE_SENSITIVE);
-							gConfig->SetInt(CONFIG_FIND_FUNCTION_CASE_SENSITIVE, (checked == BST_CHECKED));
+							if( HIWORD(wParam) == LBN_DBLCLK )  // double clicking on an item in the list automatically selects it
+							{
+								SendMessage(hDlg, WM_COMMAND, IDSELECT, 0);
+							}
+
+							return (INT_PTR)TRUE;
 						}
-
-						EndDialog(hDlg, -1);
-						return (INT_PTR)TRUE;
-					}
-
-					case IDC_FUNCTIONLIST:
-					{
-						if( HIWORD(wParam) == LBN_DBLCLK )
-						{
-							SendMessage(hDlg, WM_COMMAND, IDSELECT, 0);
-						}
-
-						return (INT_PTR)TRUE;
 					}
 				}
 			}
@@ -1389,7 +1702,7 @@ INT_PTR CALLBACK StatsModalDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM
 			swprintf(buffer, buffer_len, TEXT("Total Memory Used: %zd"), TotalSize);
 			SetDlgItemText(hDlg, IDC_STATIC_MEM_TOTAL, buffer);
 
-			swprintf(buffer, buffer_len, TEXT("Total Memory Used for Call Records: %zd"), callrec_total_size - callrec_free_size);
+			swprintf(buffer, buffer_len, TEXT("Total Memory Used for Thread and Call Records: %zd"), callrec_total_size - callrec_free_size);
 			SetDlgItemText(hDlg, IDC_STATIC_MEM_CALLREC, buffer);
 
 			swprintf(buffer, buffer_len, TEXT("Total Memory Used for Dialog ListView: %zd"), dialog_total_size - dialog_free_size);
@@ -1414,4 +1727,209 @@ INT_PTR CALLBACK StatsModalDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM
 	}
 
 	return (INT_PTR)FALSE;
+}
+
+void WINAPI SaveProfilerDataThread(LPVOID lpData)
+{
+	SaveLoadErrorMsg[0] = 0;
+
+	Repository Repo(SaveLoadFilename, &DialogAllocator);
+	if( !Repo.OpenForWriting() )
+	{
+		swprintf(SaveLoadErrorMsg, 256, TEXT("Couldn't open file, GetLastError() = %d"), Repo.ErrorCode);
+
+		if( ghPleaseWaitModalDialogWnd )
+		{
+			PostMessage(ghPleaseWaitModalDialogWnd, WM_PLEASEWAITDONE, 0, 0);
+		}
+
+		return;
+	}
+
+	Header_t Header;
+	Repo << Header;
+
+	int map_length = (int)ThreadFileListMap.size();
+	Repo << map_length;  // serialize the length of the map of source file names
+
+	// serialize the map of source file names...
+	for( auto it = ThreadFileListMap.begin(); it != ThreadFileListMap.end(); ++it )
+	{
+		DWORD ThreadId = it->first;
+		Repo << ThreadId;  // serialize the thread id for this list of files
+
+		std::vector<std::string>&FileList = it->second;
+
+		int list_length = (int)FileList.size();
+		Repo << list_length;  // serialize the length of the list of files
+
+		for( int index = 0; index < list_length; ++index )
+		{
+			char* filename = (char*)FileList[index].c_str();
+			Repo << filename;  // serialize each filename for this thread
+		}
+	}
+
+	// serialize the thread id records and call tree records for each thread...
+	Repo << CaptureCallTreeThreadArraySize;
+
+	for( unsigned int ThreadIndex = 0; ThreadIndex < CaptureCallTreeThreadArraySize; ++ThreadIndex )
+	{
+		DialogThreadIdRecord_t* ThreadRec = (DialogThreadIdRecord_t*)CaptureCallTreeThreadArrayPointer[ThreadIndex];
+		Repo << *ThreadRec;
+	}
+
+	Repo.Close();
+
+	if( Repo.ErrorCode != 0 )
+	{
+		swprintf(SaveLoadErrorMsg, 256, TEXT("Error writing profile save data, GetLastError() = %d"), Repo.ErrorCode);
+
+		if( ghPleaseWaitModalDialogWnd )
+		{
+			PostMessage(ghPleaseWaitModalDialogWnd, WM_PLEASEWAITDONE, 0, 0);
+		}
+
+		return;
+	}
+
+	if( ghPleaseWaitModalDialogWnd )
+	{
+		PostMessage(ghPleaseWaitModalDialogWnd, WM_PLEASEWAITDONE, 0, 0);
+	}
+}
+
+void WINAPI LoadProfilerDataThread(LPVOID lpData)
+{
+	SaveLoadErrorMsg[0] = 0;
+
+	Repository Repo(SaveLoadFilename, &DialogAllocator);
+
+	if( !Repo.OpenForReading() )
+	{
+		swprintf(SaveLoadErrorMsg, 256, TEXT("Couldn't open file, GetLastError() = %d"), Repo.ErrorCode);
+
+		if( ghPleaseWaitModalDialogWnd )
+		{
+			PostMessage(ghPleaseWaitModalDialogWnd, WM_PLEASEWAITDONE, 0, 0);
+		}
+
+		return;
+	}
+
+	Header_t Header;
+
+	Repo << Header;
+
+	if( Repo.ErrorCode != 0 )
+	{
+		if( Repo.ErrorCode == LONG_MAX )
+		{
+			if( (Header.Name == nullptr) || (strcmp(Header.Name, "AeonProfiler") != 0) )
+			{
+				swprintf(SaveLoadErrorMsg, 256, TEXT("This file is not a valid Aeon Profiler saved profile."));
+			}
+			else
+			{
+				swprintf(SaveLoadErrorMsg, 256, TEXT("Couldn't read header of profile save data."));
+			}
+		}
+		else
+		{
+			swprintf(SaveLoadErrorMsg, 256, TEXT("Couldn't read header of profile save data, GetLastError() = %d"), Repo.ErrorCode);
+		}
+
+		if( ghPleaseWaitModalDialogWnd )
+		{
+			PostMessage(ghPleaseWaitModalDialogWnd, WM_PLEASEWAITDONE, 0, 0);
+		}
+
+		return;
+	}
+
+	if( (Header.Name == nullptr) || (strcmp(Header.Name, "AeonProfiler") != 0) || (Header.Version != 1) )
+	{
+		swprintf(SaveLoadErrorMsg, 256, TEXT("This file is not a valid Aeon Profiler saved profile."));
+
+		if( ghPleaseWaitModalDialogWnd )
+		{
+			PostMessage(ghPleaseWaitModalDialogWnd, WM_PLEASEWAITDONE, 0, 0);
+		}
+
+		return;
+	}
+
+	// serialize the list of source file names...
+	ThreadFileListMap.clear();
+
+	int map_length;
+	Repo << map_length;  // serialize the length of the map of source file names
+
+	// serialize the map of source file names...
+	for( int index = 0; index < map_length; ++index )
+	{
+		std::vector<std::string> FileList;  // array of unique source code filenames
+
+		DWORD ThreadId;
+		Repo << ThreadId;  // serialize the thread id for this list of files
+
+		int list_length;
+		Repo << list_length;  // serialize the length of the list of files
+
+		for( int index = 0; index < list_length; ++index )
+		{
+			char* filename;
+			Repo << filename;  // serialize each filename for this thread
+
+			std::string strFileName = filename;
+
+			FileList.push_back(strFileName);  // add the new filename to the end of the array
+		}
+
+		ThreadFileListMap.emplace(ThreadId, FileList);  // add the list of filenames to the ThreadFileListMap
+	}
+
+	extern void** CaptureCallTreeThreadArrayPointer;
+	extern unsigned int CaptureCallTreeThreadArraySize;
+
+	NumThreads = 0;
+	NumCallTreeRecords = 0;
+
+	// serialize the thread id records and call tree records for each thread...
+	Repo << CaptureCallTreeThreadArraySize;
+
+	DialogAllocator.FreeBlocks();  // free all the memory allocated by the DialogAllocator
+
+	if( CaptureCallTreeThreadArraySize > 0 )
+	{
+		CaptureCallTreeThreadArrayPointer = (void**)DialogAllocator.AllocateBytes(CaptureCallTreeThreadArraySize * sizeof(void*), sizeof(void*));
+
+		for( unsigned int index = 0; index < CaptureCallTreeThreadArraySize; ++index )
+		{
+			CaptureCallTreeThreadArrayPointer[index] = (DialogThreadIdRecord_t*)DialogAllocator.AllocateBytes(sizeof(DialogThreadIdRecord_t), sizeof(DialogThreadIdRecord_t));
+			Repo << *(DialogThreadIdRecord_t*)CaptureCallTreeThreadArrayPointer[index];
+		}
+	}
+
+	Repo.Close();
+
+	if( Repo.ErrorCode != 0 )
+	{
+		swprintf(SaveLoadErrorMsg, 256, TEXT("Error writing profile save data, GetLastError() = %d"), Repo.ErrorCode);
+
+		if( ghPleaseWaitModalDialogWnd )
+		{
+			PostMessage(ghPleaseWaitModalDialogWnd, WM_PLEASEWAITDONE, 0, 0);
+		}
+
+		return;
+	}
+
+	// set the TicksPerHundredNanoseconds value to that of the saved profile machine
+	TicksPerHundredNanoseconds = Header.TicksPerHundredNanoseconds;
+
+	if( ghPleaseWaitModalDialogWnd )
+	{
+		PostMessage(ghPleaseWaitModalDialogWnd, WM_PLEASEWAITDONE, 0, 0);
+	}
 }

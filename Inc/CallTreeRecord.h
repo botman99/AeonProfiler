@@ -7,6 +7,7 @@
 
 #include "Allocator.h"
 #include "Hash.h"
+#include "Repository.h"
 
 #define CALLRECORD_HASH_TABLE_SIZE 256  /* default size of hash table for all callrecords within a thread */
 #define PARENT_CALLRECORD_HASH_TABLE_SIZE 8  /* default size of hash table for parents within a child callrecord */
@@ -42,6 +43,116 @@ struct DialogCallTreeRecord_t  // "static" copy of CCallTreeRecord for the Dialo
 	int MaxRecursionLevel;
 
 	char* SymbolName;
+	int SourceFileIndex;
+	int SourceFileLineNumber;
+
+	void Serialize(Repository& Repo, bool bDeepCopy)
+	{
+		if( Repo.bIsDebugSave )
+		{
+			WORD StackCallerData_Signature = 0x3cc3;
+			if( Repo.bIsLoading )
+			{
+				WORD Signature;
+				Repo << Signature;
+				assert( Signature == StackCallerData_Signature );
+			}
+			else
+			{
+				Repo << StackCallerData_Signature;
+			}
+		}
+
+		if( Repo.bIsLoading )
+		{
+			NumCallTreeRecords++;
+		}
+
+		if( !bDeepCopy && !Repo.bIsLoading )
+		{
+			unsigned int TempParentArraySize = 0;
+			Repo << TempParentArraySize;
+		}
+		else
+		{
+			Repo << ParentArraySize;
+
+			if( Repo.bIsLoading )
+			{
+				ParentArray = (ParentArraySize > 0) ? (void**)Repo.Allocator->AllocateBytes(ParentArraySize * sizeof(void*), sizeof(void*)) : nullptr;
+				NumCallTreeRecords++;
+			}
+
+			assert( (ParentArraySize == 0) || (ParentArray != nullptr) );
+			for( unsigned int index = 0; index < ParentArraySize; ++index )
+			{
+				if( Repo.bIsLoading )
+				{
+					ParentArray[index] = Repo.Allocator->AllocateBytes(sizeof(DialogCallTreeRecord_t), sizeof(void*));
+				}
+
+				assert( ParentArray[index] != nullptr );
+				DialogCallTreeRecord_t* CallTreeRec = (DialogCallTreeRecord_t*)ParentArray[index];
+				CallTreeRec->Serialize(Repo, false);
+			}
+		}
+
+		if( !bDeepCopy && !Repo.bIsLoading )
+		{
+			unsigned int TempChildrenArraySize = 0;
+			Repo << TempChildrenArraySize;
+		}
+		else
+		{
+			Repo << ChildrenArraySize;
+
+			if( Repo.bIsLoading )
+			{
+				ChildrenArray = (ChildrenArraySize > 0) ? (void**)Repo.Allocator->AllocateBytes(ChildrenArraySize * sizeof(void*), sizeof(void*)) : nullptr;
+			}
+
+			assert( (ChildrenArraySize == 0) || (ChildrenArray != nullptr) );
+			for( unsigned int index = 0; index < ChildrenArraySize; ++index )
+			{
+				if( Repo.bIsLoading )
+				{
+					ChildrenArray[index] = Repo.Allocator->AllocateBytes(sizeof(DialogCallTreeRecord_t), sizeof(void*));
+				}
+
+				assert( ChildrenArray[index] != nullptr );
+				DialogCallTreeRecord_t* CallTreeRec = (DialogCallTreeRecord_t*)ChildrenArray[index];
+				CallTreeRec->Serialize(Repo, false);
+			}
+		}
+
+		if( Repo.bIsLoading )
+		{
+			__int64 Address64;
+			Repo << Address64;
+			Address = (void*)Address64;
+		}
+		else
+		{
+			__int64 Address64 = (__int64)Address;
+			Repo << Address64;
+		}
+
+		Repo << EnterTime;
+
+		Repo << CallDurationInclusiveTimeSum;
+		Repo << CallDurationExclusiveTimeSum;
+		Repo << MaxCallDurationExclusiveTime;
+		Repo << CurrentChildrenInclusiveTime;
+
+		Repo << CallCount;
+		Repo << StackDepth;
+		Repo << MaxRecursionLevel;
+
+		//assert( (Repo.bIsLoading == true) || (SymbolName != nullptr) );
+		Repo << SymbolName;
+		Repo << SourceFileIndex;
+		Repo << SourceFileLineNumber;
+	}
 };
 
 class CCallTreeRecord

@@ -3,3 +3,4 @@ LIBRARY
 EXPORTS
 _penter = Profiler_enter
 _pexit = Profiler_exit
+AeonWinCallback = AeonWinCallbackFunc

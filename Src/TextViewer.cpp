@@ -65,6 +65,11 @@ void LoadTextFile(char* filename)
 {
 	DWORD err;
 
+	if( (filename == nullptr) || (*filename == 0) )
+	{
+		return;
+	}
+
 	TextViewerAllocator.FreeBlocks();  // free all the memory allocated by the TextViewerAllocator
 
 	strncpy_s(TextViewerFileName, filename, MAX_PATH);
@@ -98,5 +103,6 @@ void LoadTextFile(char* filename)
 
 		ConvertTextFileBufferToUnicode(TextViewer_FileBuffer, length, TextViewerBuffer);
 
+		CloseHandle(hFile);
 	}
 }

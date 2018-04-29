@@ -7,6 +7,7 @@
 
 #include "Allocator.h"
 #include "CallTreeRecord.h"
+#include "Repository.h"
 
 struct DialogStackCallerData_t
 {
@@ -15,6 +16,55 @@ struct DialogStackCallerData_t
 	__int64 ProfilerOverhead;  // the total amount of time spent in the profiler tracking this call
 	const void* CallerAddress;
 	struct DialogCallTreeRecord_t* CurrentCallTreeRecord;  // pointer to a static copy of the current function's CallTreeRecord_t
+
+	void Serialize(Repository& Repo)
+	{
+		if( Repo.bIsDebugSave )
+		{
+			WORD StackCallerData_Signature = 0xa55a;
+			if( Repo.bIsLoading )
+			{
+				WORD Signature;
+				Repo << Signature;
+				assert( Signature == StackCallerData_Signature );
+			}
+			else
+			{
+				Repo << StackCallerData_Signature;
+			}
+		}
+
+		Repo << ThreadId;
+		Repo << Counter;
+		Repo << ProfilerOverhead;
+
+		//assert( CallerAddress != nullptr );  // No, CallerAddress can be null here
+		if( Repo.bIsLoading )
+		{
+			__int64 CallerAddress64;
+			Repo << CallerAddress64;
+			CallerAddress = (void*)CallerAddress64;
+		}
+		else
+		{
+			__int64 CallerAddress64 = (__int64)CallerAddress;
+			Repo << CallerAddress64;
+		}
+
+		if( Repo.bIsLoading )
+		{
+			CurrentCallTreeRecord = (DialogCallTreeRecord_t*)Repo.Allocator->AllocateBytes( sizeof(DialogCallTreeRecord_t), sizeof(void*));
+		}
+
+		assert( CurrentCallTreeRecord != nullptr );
+		CurrentCallTreeRecord->Serialize(Repo, false);
+	}
+
+	friend Repository& operator<<(Repository& Repo, DialogStackCallerData_t& StackCallerData)
+	{
+		StackCallerData.Serialize(Repo);
+		return Repo;
+	}
 };
 
 struct StackCallerData_t
@@ -52,10 +102,12 @@ public:
 
 	~CStack() {}
 
-	void Push(StackCallerData_t && InValue)
+	void Push(StackCallerData_t* InValue)
 	{
-		Stack_t * item;
-		if (pFree)
+		assert(InValue);
+
+		Stack_t* item;
+		if( pFree )
 		{
 			item = new(pFree) Stack_t;
 			pFree = pFree->Next;
@@ -68,17 +120,18 @@ public:
 		item->Next = pTop;
 		pTop = item;
 
-		pTop->value = std::move(InValue);
+		pTop->value = *InValue;
 
 		StackSize++;
 	}
 
-	void Pop(StackCallerData_t && OutValue)
+	void Pop(StackCallerData_t* OutValue)
 	{
+		assert(OutValue);
 		assert(pTop);
 
-		OutValue = std::move(pTop->value);
-		Stack_t * next = pTop->Next;
+		*OutValue = pTop->value;
+		Stack_t* next = pTop->Next;
 		pTop->Next = pFree;
 		pFree = pTop;
 		pTop = next;

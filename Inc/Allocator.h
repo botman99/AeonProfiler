@@ -35,32 +35,17 @@ public:
 	void* AllocateBytes(size_t NumBytes, int Alignment);
 
 	template<typename T>
-	T * New()
+	T* New()
 	{
-		T * obj = (T*)AllocateBytes(sizeof(T), std::alignment_of<T>::value);
+		T* obj = (T*)AllocateBytes(sizeof(T), std::alignment_of<T>::value);
 		return new (obj) T();
 	}
 
-	// TODO: Variadic template.
-	template<typename T, typename Arg1>
-	T * New(Arg1 && arg1)
+	template<typename T, typename... ArgTypes>
+	T* New(ArgTypes... Args)
 	{
-		T * obj = (T*)AllocateBytes(sizeof(T), std::alignment_of<T>::value);
-		return new (obj) T(std::forward<Arg1>(arg1));
-	}
-
-	template<typename T, typename Arg1, typename Arg2>
-	T * New(Arg1 && arg1, Arg2 && arg2)
-	{
-		T * obj = (T*)AllocateBytes(sizeof(T), std::alignment_of<T>::value);
-		return new (obj) T(std::forward<Arg1>(arg1), std::forward<Arg2>(arg2));
-	}
-
-	template<typename T, typename Arg1, typename Arg2, typename Arg3>
-	T * New(Arg1 && arg1, Arg2 && arg2, Arg3 && arg3)
-	{
-		T * obj = (T*)AllocateBytes(sizeof(T), std::alignment_of<T>::value);
-		return new (obj) T(std::forward<Arg1>(arg1), std::forward<Arg2>(arg2), std::forward<Arg3>(arg3));
+		T* obj = (T*)AllocateBytes(sizeof(T), std::alignment_of<T>::value);
+		return new (obj) T(std::forward<ArgTypes>(Args)...);
 	}
 };
 

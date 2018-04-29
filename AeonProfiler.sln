@@ -1,7 +1,11 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 2012
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "AeonProfiler_vs2012", "AeonProfiler_vs2012.vcxproj", "{07083578-CF19-41CD-AF26-B3DB0FAE5170}"
+# Visual Studio 14
+VisualStudioVersion = 14.0.25420.1
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "AeonProfiler", "AeonProfiler.vcxproj", "{07083578-CF19-41CD-AF26-B3DB0FAE5170}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "AeonWin", "AeonWin.vcxproj", "{6CB8D053-27CD-427F-9DB9-649A5B1BB4E7}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -19,6 +23,14 @@ Global
 		{07083578-CF19-41CD-AF26-B3DB0FAE5170}.Release|Win32.Build.0 = Release|Win32
 		{07083578-CF19-41CD-AF26-B3DB0FAE5170}.Release|x64.ActiveCfg = Release|x64
 		{07083578-CF19-41CD-AF26-B3DB0FAE5170}.Release|x64.Build.0 = Release|x64
+		{6CB8D053-27CD-427F-9DB9-649A5B1BB4E7}.Debug|Win32.ActiveCfg = Debug|Win32
+		{6CB8D053-27CD-427F-9DB9-649A5B1BB4E7}.Debug|Win32.Build.0 = Debug|Win32
+		{6CB8D053-27CD-427F-9DB9-649A5B1BB4E7}.Debug|x64.ActiveCfg = Debug|Win32
+		{6CB8D053-27CD-427F-9DB9-649A5B1BB4E7}.Debug|x64.Build.0 = Debug|Win32
+		{6CB8D053-27CD-427F-9DB9-649A5B1BB4E7}.Release|Win32.ActiveCfg = Release|Win32
+		{6CB8D053-27CD-427F-9DB9-649A5B1BB4E7}.Release|Win32.Build.0 = Release|Win32
+		{6CB8D053-27CD-427F-9DB9-649A5B1BB4E7}.Release|x64.ActiveCfg = Release|Win32
+		{6CB8D053-27CD-427F-9DB9-649A5B1BB4E7}.Release|x64.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -1,10 +1,11 @@
 
 #pragma once
 
-#define WIN32_LEAN_AND_MEAN  // Exclude rarely-used stuff from Windows headers
 // Windows Header Files:
 #include <Windows.h>
 #include <Commctrl.h>
+#include <vector>
+#include <map>
 
 #include "DebugLog.h"
 
@@ -16,6 +17,11 @@
 #define WM_CAPTURECALLTREEDONE		(WM_USER+2)  /* notify the main window that the thread capturing the call tree data is done */
 #define WM_DISPLAYCALLTREEDATA		(WM_USER+3)  /* notify the main window that the call tree data should be displayed */
 #define WM_SPLITTER_PERCENT			(WM_USER+4)  /* notify the window that the splitter position has changed */
+#define WM_PLEASEWAITDONE			(WM_USER+5)  /* notify the "Please wait..." dialog that it can close */
+#define WM_SAVEPROFILEDATADONE		(WM_USER+6)  /* notify the main window that saving the profiler data is done */
+#define WM_LOADPROFILEDATADONE		(WM_USER+7)  /* notify the main window that loading the profiler data is done */
+#define WM_QSORT_DONE				(WM_USER+8)  /* notify the chiild window when a qsort is done */
+#define WM_DISPLAYCALLTREEDATA_QSORT_DONE (WM_USER+9)  /* notify the parent window that the qsort is done */
 
 #define MAX_LOADSTRING 100
 
@@ -26,7 +32,19 @@ enum SortType
 	SORT_Decreasing
 };
 
+enum ePleaseWaitType
+{
+	PleaseWait_SavingProfilerData,
+	PleaseWait_LoadingProfilerData,
+	PleaseWait_ListViewNotifySort,
+	PleaseWait_DisplayCallTreeDataSort,
+};
+
+extern std::map<DWORD, std::vector<std::string>> ThreadFileListMap;
+
+
 extern HMODULE ModuleHandle;
+extern int TicksPerHundredNanoseconds;
 
 extern TCHAR app_filename[];  // filename of the application that loaded the DLL
 extern DWORD ApplicationProcessId;
@@ -68,12 +86,15 @@ void ConvertTicksToTime(TCHAR* Buffer, size_t buffer_len, float AvgTicks);
 
 void ConvertTCHARtoCHAR(TCHAR* InBuffer, char* OutBuffer, unsigned int OutBufferSize);
 
+void InitializeSymbolLookup();
+char* LookupAddressSymbolName(DWORD64 dw64Address);
+INT_PTR CALLBACK PleaseWaitModalDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam);
 INT_PTR CALLBACK LookupSymbolsModalDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam);
 INT_PTR CALLBACK ResetModalDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam);
 INT_PTR CALLBACK ThreadIdModalDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam);
 INT_PTR CALLBACK FindSymbolModalDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam);
 INT_PTR CALLBACK StatsModalDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam);
-void GetSourceCodeLineFromAddress(DWORD64 dw64Address, int& LineNumber, char* FileName, int FileNameSize);
+bool GetSourceCodeLineFromAddress(DWORD64 dw64Address, int& LineNumber, char* FileName, int FileNameSize);
 
 void ListViewInitChildWindows();
 void ListViewSetFocus(HWND hWnd);

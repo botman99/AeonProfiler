@@ -8,6 +8,7 @@
 #include "Allocator.h"
 #include "Stack.h"
 #include "Hash.h"
+#include "Repository.h"
 
 extern int NumThreads;
 
@@ -25,6 +26,84 @@ struct DialogThreadIdRecord_t  // "static" copy of CThreadIdRecord for the Dialo
 
 	DWORD ThreadId;
 	char* SymbolName;
+
+	void Serialize(Repository& Repo)
+	{
+		if( Repo.bIsDebugSave )
+		{
+			WORD StackCallerData_Signature = 0xe44e;
+			if( Repo.bIsLoading )
+			{
+				WORD Signature;
+				Repo << Signature;
+				assert( Signature == StackCallerData_Signature );
+			}
+			else
+			{
+				Repo << StackCallerData_Signature;
+			}
+		}
+
+		if( Repo.bIsLoading )
+		{
+			NumThreads++;
+		}
+
+		Repo << StackArraySize;
+
+		if( Repo.bIsLoading )
+		{
+			StackArray = (StackArraySize > 0) ? (DialogStackCallerData_t*)Repo.Allocator->AllocateBytes(StackArraySize * sizeof(DialogStackCallerData_t), sizeof(void*)) : nullptr;
+		}
+
+		assert( (StackArraySize == 0) || (StackArray != nullptr) );
+		for( unsigned int index = 0; index < StackArraySize; ++index )
+		{
+			Repo << StackArray[index];
+		}
+
+		Repo << CallTreeArraySize;
+
+		if( Repo.bIsLoading )
+		{
+			CallTreeArray = (CallTreeArraySize > 0) ? (void**)Repo.Allocator->AllocateBytes(CallTreeArraySize * sizeof(void*), sizeof(void*)) : nullptr;
+		}
+
+		assert( (CallTreeArraySize == 0) || (CallTreeArray != nullptr) );
+		for( unsigned int index = 0; index < CallTreeArraySize; ++index )
+		{
+			if( Repo.bIsLoading )
+			{
+				CallTreeArray[index] = Repo.Allocator->AllocateBytes(sizeof(DialogCallTreeRecord_t), sizeof(void*));
+			}
+
+			assert( CallTreeArray[index] != nullptr );
+			DialogCallTreeRecord_t* CallTreeRec = (DialogCallTreeRecord_t*)CallTreeArray[index];
+			CallTreeRec->Serialize(Repo, true);
+		}
+
+		//assert( Address != nullptr );  // No, Address can be null here
+		if( Repo.bIsLoading )
+		{
+			__int64 Address64;
+			Repo << Address64;
+			Address = (void*)Address64;
+		}
+		else
+		{
+			__int64 Address64 = (__int64)Address;
+			Repo << Address64;
+		}
+
+		Repo << ThreadId;
+		Repo << SymbolName;
+	}
+
+	friend Repository& operator<<(Repository& Repo, DialogThreadIdRecord_t& ThreadIdRec)
+	{
+		ThreadIdRec.Serialize(Repo);
+		return Repo;
+	}
 };
 
 class CThreadIdRecord

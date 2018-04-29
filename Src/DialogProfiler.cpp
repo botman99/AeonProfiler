@@ -2,7 +2,6 @@
 #include "targetver.h"
 #include "resource.h"
 
-#define WIN32_LEAN_AND_MEAN  // Exclude rarely-used stuff from Windows headers
 // Windows Header Files:
 #include <Windows.h>
 #include <Commctrl.h>
@@ -20,9 +19,8 @@
 
 extern CHash<CThreadIdRecord>* ThreadIdHashTable;
 
-extern int TicksPerHundredNanoseconds;
-
 extern DWORD ApplicationThreadId;
+extern int* AeonWinExitPointer;
 
 CAllocator SymbolAllocator(false);  // allocator for storing the symbol names
 CAllocator DialogAllocator(false);  // allocator for the Profiler Dialog window
@@ -34,8 +32,7 @@ unsigned int CaptureCallTreeThreadArraySize = 0;
 DWORD64 CaptureCallTreeTime;
 int CaptureCallTreeSymbolsToInitialize = 0;
 
-void InitializeSymbolLookup();
-char* LookupAddressSymbolName(DWORD64 dw64Address);
+DialogThreadIdRecord_t* gDisplayCallTreeData_ListView_ThreadIdRecordForQSort;
 
 
 DialogCallTreeRecord_t* FindCallTreeRecord_BinarySearch(const DialogThreadIdRecord_t* ThreadRec, const void* InAddress)
@@ -176,11 +173,30 @@ void WINAPI ProcessCallTreeDataThread(LPVOID lpData)
 		}
 
 		// go through the Stack and calculate call durations for functions that have been entered but not exited yet...
-		for (unsigned int StackIndex = 0; StackIndex < ThreadRec->StackArraySize; StackIndex++)  // work from top of stack down to bottom
+		for( unsigned int StackIndex = 0; StackIndex < ThreadRec->StackArraySize; ++StackIndex )  // work from top of stack down to bottom
 		{
 			// handle calculating values the same way that CallerExit() does
 
 			DialogStackCallerData_t& StackRec = ThreadRec->StackArray[StackIndex];
+
+			if( StackRec.CurrentCallTreeRecord )
+			{
+				// initialize any uninitialized symbol names...
+				char* sym = StackRec.CurrentCallTreeRecord->SymbolName;
+				if( sym == nullptr )
+				{
+					sym = LookupAddressSymbolName((DWORD64)StackRec.CurrentCallTreeRecord->Address);
+					if( sym )
+					{
+						size_t length = strlen(sym);
+						char* pSymbolName = (char*)SymbolAllocator.AllocateBytes(length+1, 1);  // plus one for the null terminator
+						strcpy_s(pSymbolName, length+1, sym);
+
+						StackRec.CurrentCallTreeRecord->CallTreeRecord->SetSymbolName(pSymbolName);
+						StackRec.CurrentCallTreeRecord->SymbolName = pSymbolName;
+					}
+				}
+			}
 
 			if( StackRec.CurrentCallTreeRecord && (StackRec.CurrentCallTreeRecord->EnterTime != 0) )
 			{
@@ -222,40 +238,75 @@ void WINAPI ProcessCallTreeDataThread(LPVOID lpData)
 			}
 		}
 
-		// for each ThreadId, go through the call records (copy of CallTreeHashTable)...
-		for( unsigned int CallRecordIndex = 0; CallRecordIndex < ThreadRec->CallTreeArraySize; CallRecordIndex++ )
+		if( AeonWinExitPointer == nullptr )  // if not running standalone AeonWin application
 		{
-			DialogCallTreeRecord_t* CallTreeRec = (DialogCallTreeRecord_t*)ThreadRec->CallTreeArray[CallRecordIndex];
+			std::vector<std::string> FileList;  // array of unique source code filenames
+			std::map<string, int> FileMap;
+			int FileNameIndex = 0;
 
-			// initialize any uninitialized symbol names...
-			char* sym = CallTreeRec->SymbolName;
-			if( sym == nullptr )
+			// for each ThreadId, go through the call records (copy of CallTreeHashTable)...
+			for( unsigned int CallRecordIndex = 0; CallRecordIndex < ThreadRec->CallTreeArraySize; CallRecordIndex++ )
 			{
-				sym = LookupAddressSymbolName((DWORD64)CallTreeRec->Address);
-				if( sym )
-				{
-					size_t length = strlen(sym);
-					char* pSymbolName = (char*)SymbolAllocator.AllocateBytes(length+1, 1);  // plus one for the null terminator
-					strcpy_s(pSymbolName, length+1, sym);
+				DialogCallTreeRecord_t* CallTreeRec = (DialogCallTreeRecord_t*)ThreadRec->CallTreeArray[CallRecordIndex];
 
-					CallTreeRec->CallTreeRecord->SetSymbolName(pSymbolName);
-					CallTreeRec->SymbolName = pSymbolName;
+				// initialize any uninitialized symbol names...
+				char* sym = CallTreeRec->SymbolName;
+				if( sym == nullptr )
+				{
+					sym = LookupAddressSymbolName((DWORD64)CallTreeRec->Address);
+					if( sym )
+					{
+						size_t length = strlen(sym);
+						char* pSymbolName = (char*)SymbolAllocator.AllocateBytes(length+1, 1);  // plus one for the null terminator
+						strcpy_s(pSymbolName, length+1, sym);
+
+						CallTreeRec->CallTreeRecord->SetSymbolName(pSymbolName);
+						CallTreeRec->SymbolName = pSymbolName;
+					}
+
+					TotalSymbolsLookedUp++;
 				}
 
-				TotalSymbolsLookedUp++;
+				int LineNumber;
+				char FileName[MAX_PATH];
+
+				if( GetSourceCodeLineFromAddress((DWORD64)CallTreeRec->Address, LineNumber, FileName, MAX_PATH) )
+				{
+					std::string strFileName = FileName;
+
+					if( FileMap.find(strFileName) == FileMap.end() )
+					{
+						FileList.push_back(strFileName);  // add the new filename to the end of the array (at FileNameIndex)
+						FileMap.emplace(FileName, FileNameIndex);  // add the filename to the map to help check for uniqueness
+						FileNameIndex++;
+					}
+
+					auto FileMap_it = FileMap.find(strFileName);
+					int file_index = FileMap_it->second;
+
+					CallTreeRec->SourceFileIndex = file_index;
+					CallTreeRec->SourceFileLineNumber = LineNumber;
+				}
+				else
+				{
+					CallTreeRec->SourceFileIndex = -1;  // source file name index and line number are unknown
+					CallTreeRec->SourceFileLineNumber = -1;
+				}
+
+				if( CallTreeRec->EnterTime != 0 )
+				{
+					CallTreeRec->EnterTime = 0;
+				}
+
+				if( ghLookupSymbolsModalDialogWnd && ((TotalSymbolsLookedUp % 100) == 0) )
+				{
+					swprintf(DialogTextBuffer, DialogTextBufferLen, TEXT("%d out of %d"), TotalSymbolsLookedUp, CaptureCallTreeSymbolsToInitialize);
+
+					SetDlgItemText(ghLookupSymbolsModalDialogWnd, IDC_LOOKUPSYMBOLS_TEXT, DialogTextBuffer);
+				}
 			}
 
-			if( CallTreeRec->EnterTime != 0 )
-			{
-				CallTreeRec->EnterTime = 0;
-			}
-
-			if( ghLookupSymbolsModalDialogWnd && ((TotalSymbolsLookedUp % 100) == 0) )
-			{
-				swprintf(DialogTextBuffer, DialogTextBufferLen, TEXT("%d out of %d"), TotalSymbolsLookedUp, CaptureCallTreeSymbolsToInitialize);
-
-				SetDlgItemText(ghLookupSymbolsModalDialogWnd, IDC_LOOKUPSYMBOLS_TEXT, DialogTextBuffer);
-			}
+			ThreadFileListMap.emplace(ThreadRec->ThreadId, FileList);  // add the list of filenames to the ThreadFileListMap
 		}
 
 		// since the CopyHashToArray function in the Hash table only copied the original CCallTreeRecord pointers for
@@ -269,66 +320,52 @@ void WINAPI ProcessCallTreeDataThread(LPVOID lpData)
 
 			for( unsigned int ParentIndex = 0; ParentIndex < CallTreeRec->ParentArraySize; ParentIndex++ )
 			{
-				CCallTreeRecord* ParentCallTreeRec = (CCallTreeRecord*)CallTreeRec->ParentArray[ParentIndex];
-
-				if( ParentCallTreeRec )
+				if( AeonWinExitPointer )  // if running standalone AeonWin application
 				{
-					DialogCallTreeRecord_t* ArrayCallTreeRec = FindCallTreeRecord_BinarySearch(ThreadRec, ParentCallTreeRec->Address);
-					assert(ArrayCallTreeRec);
+					DialogCallTreeRecord_t* ParentCallTreeRec = (DialogCallTreeRecord_t*)CallTreeRec->ParentArray[ParentIndex];
 
-					CallTreeRec->ParentArray[ParentIndex] = ArrayCallTreeRec;
+					if( ParentCallTreeRec )
+					{
+						DialogCallTreeRecord_t* ArrayCallTreeRec = FindCallTreeRecord_BinarySearch(ThreadRec, ParentCallTreeRec->Address);
+						assert(ArrayCallTreeRec);
+
+						CallTreeRec->ParentArray[ParentIndex] = ArrayCallTreeRec;
+					}
+				}
+				else
+				{
+					CCallTreeRecord* ParentCallTreeRec = (CCallTreeRecord*)CallTreeRec->ParentArray[ParentIndex];
+
+					if( ParentCallTreeRec )
+					{
+						DialogCallTreeRecord_t* ArrayCallTreeRec = FindCallTreeRecord_BinarySearch(ThreadRec, ParentCallTreeRec->Address);
+						assert(ArrayCallTreeRec);
+
+						CallTreeRec->ParentArray[ParentIndex] = ArrayCallTreeRec;
+					}
 				}
 			}
 
 			for( unsigned int ChildIndex = 0; ChildIndex < CallTreeRec->ChildrenArraySize; ChildIndex++ )
 			{
-				CCallTreeRecord* ChildCallTreeRec = (CCallTreeRecord*)CallTreeRec->ChildrenArray[ChildIndex];
-
-				if( ChildCallTreeRec )
+				if( AeonWinExitPointer )  // if running standalone AeonWin application
 				{
-					DialogCallTreeRecord_t* ArrayCallTreeRec = FindCallTreeRecord_BinarySearch(ThreadRec, ChildCallTreeRec->Address);
-					assert(ArrayCallTreeRec);
+					DialogCallTreeRecord_t* ChildCallTreeRec = (DialogCallTreeRecord_t*)CallTreeRec->ChildrenArray[ChildIndex];
+				}
+				else
+				{
+					CCallTreeRecord* ChildCallTreeRec = (CCallTreeRecord*)CallTreeRec->ChildrenArray[ChildIndex];
 
-					CallTreeRec->ChildrenArray[ChildIndex] = ArrayCallTreeRec;
+					if( ChildCallTreeRec )
+					{
+						DialogCallTreeRecord_t* ArrayCallTreeRec = FindCallTreeRecord_BinarySearch(ThreadRec, ChildCallTreeRec->Address);
+						assert(ArrayCallTreeRec);
+
+						CallTreeRec->ChildrenArray[ChildIndex] = ArrayCallTreeRec;
+					}
 				}
 			}
 		}
-
-/*
-		// write out a bunch of debugging information to the log file
-
-		DebugLog("CaptureCallTreeData(): ThreadId = %d", ThreadRec->ThreadId);
-
-		for( unsigned int CallRecordIndex = 0; CallRecordIndex < ThreadRec->CallTreeArraySize; CallRecordIndex++ )
-		{
-			DialogCallTreeRecord_t* CallTreeRec = (DialogCallTreeRecord_t*)ThreadRec->CallTreeArray[CallRecordIndex];
-
-			if( CallTreeRec->SymbolName )
-				DebugLog("  CallTreeRec Address = 0x%08x, SymbolName = %s, parents = %d, children = %d, CallCount = %d, MaxCallDuration = %I64d", CallTreeRec->Address, CallTreeRec->SymbolName, CallTreeRec->ParentArraySize, CallTreeRec->ChildrenArraySize, CallTreeRec->CallCount, CallTreeRec->MaxCallDuration);
-			else
-				DebugLog("  CallTreeRec Address = 0x%08x, SymbolName = ??, parents = %d, children = %d, CallCount = %d, MaxCallDuration = %I64d", CallTreeRec->Address, CallTreeRec->ParentArraySize, CallTreeRec->ChildrenArraySize, CallTreeRec->CallCount, CallTreeRec->MaxCallDuration);
-
-			for( unsigned int ParentIndex = 0; ParentIndex < CallTreeRec->ParentArraySize; ParentIndex++ )
-			{
-				DialogCallTreeRecord_t* ParentCallTreeRec = (DialogCallTreeRecord_t*)CallTreeRec->ParentArray[ParentIndex];
-
-				if( ParentCallTreeRec->SymbolName )
-					DebugLog("    ParentCallTreeRec Address = 0x%08x, ParentCallTreeRec->SymbolName = %s, parents = %d, children = %d, CallCount = %d, MaxCallDuration = %I64d", ParentCallTreeRec->Address, ParentCallTreeRec->SymbolName, ParentCallTreeRec->ParentArraySize, ParentCallTreeRec->ChildrenArraySize, ParentCallTreeRec->CallCount, ParentCallTreeRec->MaxCallDuration);
-				else
-					DebugLog("    ParentCallTreeRec Address = 0x%08x, ParentCallTreeRec->SymbolName = ??, parents = %d, children = %d, CallCount = %d, MaxCallDuration = %I64d", ParentCallTreeRec->Address, ParentCallTreeRec->ParentArraySize, ParentCallTreeRec->ChildrenArraySize, ParentCallTreeRec->CallCount, ParentCallTreeRec->MaxCallDuration);
-			}
-
-			for( unsigned int ChildIndex = 0; ChildIndex < CallTreeRec->ChildrenArraySize; ChildIndex++ )
-			{
-				DialogCallTreeRecord_t* ChildCallTreeRec = (DialogCallTreeRecord_t*)CallTreeRec->ChildrenArray[ChildIndex];
-
-				if( ChildCallTreeRec->SymbolName )
-					DebugLog("    ChildCallTreeRec Address = 0x%08x, ParentCallTreeRec->SymbolName = %s, parents = %d, children = %d, CallCount = %d, MaxCallDuration = %I64d", ChildCallTreeRec->Address, ChildCallTreeRec->SymbolName, ChildCallTreeRec->ParentArraySize, ChildCallTreeRec->ChildrenArraySize, ChildCallTreeRec->CallCount, ChildCallTreeRec->MaxCallDuration);
-				else
-					DebugLog("    ChildCallTreeRec Address = 0x%08x, ParentCallTreeRec->SymbolName = ??, parents = %d, children = %d, CallCount = %d, MaxCallDuration = %I64d", ChildCallTreeRec->Address, ChildCallTreeRec->ParentArraySize, ChildCallTreeRec->ChildrenArraySize, ChildCallTreeRec->CallCount, ChildCallTreeRec->MaxCallDuration);
-			}
-		}
-*/
 	}
 
 	if( ghLookupSymbolsModalDialogWnd )
@@ -366,6 +403,17 @@ void ResetCallTreeData()
 	PostMessage(ghDialogWnd, WM_DISPLAYCALLTREEDATA, 0, 0);
 }
 
+void WINAPI DisplayCallTreeDataQsortThread(LPVOID lpData)
+{
+	qsort(gDisplayCallTreeData_ListView_ThreadIdRecordForQSort->CallTreeArray, gDisplayCallTreeData_ListView_ThreadIdRecordForQSort->CallTreeArraySize, sizeof(void*), ListView_SortCallTree);
+
+	extern HWND ghPleaseWaitModalDialogWnd;
+	if( ghPleaseWaitModalDialogWnd )
+	{
+		PostMessage(ghPleaseWaitModalDialogWnd, WM_PLEASEWAITDONE, 0, 0);
+	}
+}
+
 void DisplayCallTreeData()
 {
 	TCHAR buffer[1024];
@@ -392,6 +440,9 @@ void DisplayCallTreeData()
 
 		if( DialogListViewThreadIndex == -1 )
 		{
+			extern bool bDisableThreadIdCancelButton;
+			bDisableThreadIdCancelButton = true;
+
 			// thread id was not found, force the user to pick a different thread
 			PostMessage(ghDialogWnd, WM_COMMAND, MAKEWPARAM(IDM_THREADID,0), 0);
 
@@ -414,16 +465,14 @@ void DisplayCallTreeData()
 
 		// sort the newly collected data by whatever sort criteria is currently set for the ListView...
 		hChildWindowCurrentlySorting = hChildWindowFunctions;
-		qsort(ListView_ThreadIdRecord->CallTreeArray, ListView_ThreadIdRecord->CallTreeArraySize, sizeof(void*), ListView_SortCallTree);
 
-		ListView_SetItemCount(hChildWindowFunctions, ListView_ThreadIdRecord->CallTreeArraySize);
+		gDisplayCallTreeData_ListView_ThreadIdRecordForQSort = ListView_ThreadIdRecord;
 
-		InvalidateRect(hChildWindowFunctions, NULL, FALSE);
+		extern ePleaseWaitType PleaseWaitType;
+		PleaseWaitType = PleaseWait_DisplayCallTreeDataSort;
 
-		// ...and select the topmost item by default (for the middle child window)
-		ListViewSetRowSelected(hChildWindowFunctions, 0, ListView_ThreadIdRecord, false);
-
-		ListViewSetFocus(hChildWindowFunctions);
+		extern HINSTANCE hInst;
+		DialogBox(hInst, MAKEINTRESOURCE(IDD_PLEASEWAIT), ghWnd, PleaseWaitModalDialog);
 	}
 	else  // otherwise there is no CallTree data to display
 	{
@@ -610,13 +659,15 @@ char* LookupAddressSymbolName(DWORD64 dw64Address)
 	return nullptr;
 }
 
-void GetSourceCodeLineFromAddress(DWORD64 dw64Address, int& LineNumber, char* FileName, int FileNameSize)
+bool GetSourceCodeLineFromAddress(DWORD64 dw64Address, int& LineNumber, char* FileName, int FileNameSize)
 {
 	static bool bHasFailed = false;  // for debugging purposes (so we only output the first time symbol lookup fails)
 
+	*FileName = 0;
+
 	if( dw64Address == 0 )
 	{
-		return;
+		return false;
 	}
 
 	PIMAGEHLP_SYMBOL64 pSymbol;
@@ -631,16 +682,22 @@ void GetSourceCodeLineFromAddress(DWORD64 dw64Address, int& LineNumber, char* Fi
 
 	Line.SizeOfStruct = sizeof(Line);
 
+	DWORD error;
+
 	if( SymGetLineFromAddr64(hApplicationProcess, dw64Address, &SymbolDisplacement, &Line) )
 	{
 		LineNumber = Line.LineNumber;
 		strcpy_s(FileName, FileNameSize, Line.FileName);
+
+		return true;
 	}
 	else if( !bHasFailed )  // only output error message once (to prevent massive spam)
 	{
 		bHasFailed = true;
 
-		DWORD error = GetLastError();
+		error = GetLastError();
 		DebugLog("SymGetLineFromAddr64 failed: error = %d", error);
 	}
+
+	return false;
 }
