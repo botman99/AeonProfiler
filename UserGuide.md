@@ -62,12 +62,12 @@ You can copy the data from any of the 'Function', 'Parents' or 'Children' views 
 * Copy to Clipboard as Comma Separated Values (CSV format) - This will copy the data to the Windows clipboard using Windows CSV format so that you can paste the data directly into a spreadsheet for later analysis.
 * Copy to Clipboard as Comma Separated Values (Text format) - This will copy the data to the Windows clipboard in text format.  You can paste this into a text file and then later load that text file into a speadsheet.
 
-##Finding a symbol by name
+#### Finding a symbol by name
 You can search for a symbol by name in any of the profiler ListView child windows ('Function', 'Parents' or 'Children') by pressing Ctrl-F when that child window is active and then typing in the name of the symbol (function name) to search for.  You can then select the function name from the list and click the 'Select' button or double-click on the function name from the list to go to that symbol name in the child window.
 
 ![find_symbol](https://github.com/botman99/AeonProfiler/raw/master/img/FindFunction.png)
 
-##Saving the profiler data
+#### Saving the profiler data
 You can save the currently captured profiler data to a file and then load it up again using the AeonWin.exe application for later analysis by using the **File -> Save** menu item.  Use **File -> Load** when running the AeonWin.exe application to load the saved profiler data.
 
 ![save_profile](https://github.com/botman99/AeonProfiler/raw/master/img/SaveProfilerData.png)
