@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2015-2018 Jeffrey "botman" Broome
+//
 
 #pragma once
 
@@ -25,6 +28,7 @@ enum ConfigValueId  // this is the list of the known configuration settings
 	CONFIG_LEFT_SPLITTER_PERCENT,
 	CONFIG_RIGHT_SPLITTER_PERCENT,
 	CONFIG_FIND_FUNCTION_CASE_SENSITIVE,
+	CONFIG_AUTO_CAPTURE_ON_TERMINATE,
 };
 
 struct ConfigValueStruct

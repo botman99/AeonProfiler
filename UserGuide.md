@@ -73,3 +73,7 @@ You can save the currently captured profiler data to a file and then load it up 
 Note: The AeonWin.exe application requires the AeonProfiler.dll file be in the same folder (since AeonWin.exe loads AeonProfiler.dll to display the saved profiler data).
 
 ![save_profile](https://github.com/botman99/AeonProfiler/raw/master/img/SaveProfilerData.png)
+
+#### Automatically saving the profiler data upon termination
+
+When the application being profiled exits, the Aeon Profiler will be terminated and I have found no way to prevent that.  If you run some application that runs and terminates before you have a chance to capture profiler data and save it, or if you want to automatically capture and save profiler data at the time the application exits, there is the **File -> Auto Capture On Terminate** menu item that you can set to "checked".  Checking this menu item will cause the Aeon Profiler to automatically capture profiler data and save the data to a file upon termination.  This menu item gets saved to the configuration settings so once you check it, it will stay checked each time you run the profiler.  You can run the AeonWin.exe application to check this menu item and then run your application being profiled to capture data.

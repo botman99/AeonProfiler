@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2015-2018 Jeffrey "botman" Broome
+//
 
 #include <Windows.h>
 
@@ -31,6 +34,7 @@ int* AeonWinExitPointer = nullptr;
 
 
 void WINAPI DialogThread(LPVOID lpData);
+void AutoSaveProfilerData();
 
 void HandleExit();
 
@@ -115,6 +119,8 @@ BOOL APIENTRY DllMain( HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReser
 		case DLL_PROCESS_DETACH:
 
 			bTrackCallerData = false;
+
+			AutoSaveProfilerData();
 
 			DebugLog("***** DLL_PROCESS_DETACH *****");
 

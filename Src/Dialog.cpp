@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2015-2018 Jeffrey "botman" Broome
+//
 
 #include "targetver.h"
 #include "resource.h"
@@ -37,6 +40,8 @@ WCHAR SaveLoadFilename[MAX_PATH];
 WCHAR SaveLoadErrorMsg[256];
 
 CConfig* gConfig = nullptr;
+
+int gbAutoCaptureOnTerminate = 0;
 
 int NumThreads;  // for stat tracking
 int NumCallTreeRecords;  // for stat tracking
@@ -121,6 +126,8 @@ void WINAPI DialogThread(LPVOID lpData)
 
 	hAccelTable = LoadAccelerators(hInst, MAKEINTRESOURCE(IDC_AEON_PROFILER));
 
+	InitializeSymbolLookup();
+
 	// Main message loop:
 	while (GetMessage(&msg, NULL, 0, 0))
 	{
@@ -178,6 +185,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				{
 					EnableMenuItem(GetSubMenu(hMenu, 0), IDM_LOAD, MF_DISABLED | MF_GRAYED);  // disable the File -> Load menu item
 				}
+
+				int auto_capture_on_terminate = gConfig->GetInt(CONFIG_AUTO_CAPTURE_ON_TERMINATE);
+				CheckMenuItem(GetSubMenu(hMenu, 0), IDM_FILE_AUTOCAPTUREONTERMINATE, auto_capture_on_terminate ? MF_CHECKED : MF_UNCHECKED);
+
+				gbAutoCaptureOnTerminate = auto_capture_on_terminate;
 
 				ghDialogWnd = hWnd;  // save this dialog's handle so that other dialogs and threads can send it messages
 			}
@@ -270,7 +282,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 									wApplicationName, sysTime.wYear, sysTime.wMonth, sysTime.wDay, sysTime.wHour, sysTime.wMinute, sysTime.wSecond);
 
 								wcscpy_s(SaveLoadFilename, app_filename);
-								PathRemoveFileSpec(SaveLoadFilename);
+								PathRemoveFileSpec(SaveLoadFilename);  // remove the ".exe" part of application name
 								wcscat_s(SaveLoadFilename, buffer);
 
 								WCHAR Filter[] = TEXT("Aeon Profiler Files (*.aeon)\0*.aeon\0All Files (*.*)\0*.*\0\0");
@@ -344,6 +356,21 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 						}
 						break;
 
+					case IDM_FILE_AUTOCAPTUREONTERMINATE:
+						{
+							HMENU hMenu = GetMenu(hWnd);
+
+							DWORD state = GetMenuState(GetSubMenu(hMenu, 0), IDM_FILE_AUTOCAPTUREONTERMINATE, MF_BYCOMMAND);
+							int auto_capture_on_terminate = !(state & MF_CHECKED);
+
+							CheckMenuItem(GetSubMenu(hMenu, 0), IDM_FILE_AUTOCAPTUREONTERMINATE, auto_capture_on_terminate ? MF_CHECKED : MF_UNCHECKED);
+
+							gConfig->SetInt(CONFIG_AUTO_CAPTURE_ON_TERMINATE, auto_capture_on_terminate);
+
+							gbAutoCaptureOnTerminate = auto_capture_on_terminate;
+						}
+						break;
+
 					case IDM_STATS:
 						{
 							DialogBox(hInst, MAKEINTRESOURCE(IDD_STATS), hWnd, StatsModalDialog);
@@ -363,7 +390,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 								int NumSymbolsToLookup = CaptureCallTreeData();
 
-								ghLookupSymbolsModalDialogWnd = 0;
+								ghLookupSymbolsModalDialogWnd = NULL;
 
 								ThreadFileListMap.clear();
 
@@ -454,7 +481,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 					extern int CaptureCallTreeSymbolsToInitialize;
 					CaptureCallTreeSymbolsToInitialize = 0;
 
-					ghLookupSymbolsModalDialogWnd = 0;
+					ghLookupSymbolsModalDialogWnd = NULL;
 
 					int NumSymbolsToLookup = 0;
 
@@ -1727,6 +1754,42 @@ INT_PTR CALLBACK StatsModalDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM
 	}
 
 	return (INT_PTR)FALSE;
+}
+
+void AutoSaveProfilerData()
+{
+	if( !bIsCaptureInProgress && (AeonWinExitPointer == nullptr) && gbAutoCaptureOnTerminate )  // is a capture not already in progress and not running standalone AeonWin application?
+	{
+		bIsCaptureInProgress = true;
+
+		CaptureCallTreeData();
+
+		ghLookupSymbolsModalDialogWnd = NULL;
+
+		ThreadFileListMap.clear();
+
+		ProcessCallTreeDataThread(nullptr);
+
+
+		SYSTEMTIME sysTime;
+		GetLocalTime(&sysTime);
+
+		WCHAR wApplicationName[MAX_PATH];
+		wcscpy_s(wApplicationName, app_filename);
+		PathStripPath(wApplicationName);
+
+		TCHAR buffer[MAX_PATH];
+		swprintf(buffer, MAX_PATH-1, TEXT("\\%s-auto-%4d-%02d-%02d_%02d-%02d-%02d.aeon"), 
+			wApplicationName, sysTime.wYear, sysTime.wMonth, sysTime.wDay, sysTime.wHour, sysTime.wMinute, sysTime.wSecond);
+
+		wcscpy_s(SaveLoadFilename, app_filename);
+		PathRemoveFileSpec(SaveLoadFilename);  // remove the ".exe" part of application name
+		wcscat_s(SaveLoadFilename, buffer);
+
+		ghPleaseWaitModalDialogWnd = NULL;
+
+		SaveProfilerDataThread(nullptr);
+	}
 }
 
 void WINAPI SaveProfilerDataThread(LPVOID lpData)

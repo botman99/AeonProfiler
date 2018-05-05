@@ -1,3 +1,7 @@
+//
+// Copyright (c) 2015-2018 Jeffrey "botman" Broome
+//
+
 #pragma once
 
 #include <Windows.h>

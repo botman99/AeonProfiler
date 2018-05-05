@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2015-2018 Jeffrey "botman" Broome
+//
 
 #include <Windows.h>
 #include <WinBase.h>
@@ -24,6 +27,7 @@ ConfigValueStruct ConfigValues[] =
 	ConfigValueStruct(CONFIG_LEFT_SPLITTER_PERCENT, CONFIG_FLOAT, 0.60f, "left_splitter_percent"),
 	ConfigValueStruct(CONFIG_RIGHT_SPLITTER_PERCENT, CONFIG_FLOAT, 0.50f, "right_splitter_percent"),
 	ConfigValueStruct(CONFIG_FIND_FUNCTION_CASE_SENSITIVE, CONFIG_INT, 0, "find_function_case_sensitive"),
+	ConfigValueStruct(CONFIG_AUTO_CAPTURE_ON_TERMINATE, CONFIG_INT, 0, "auto_capture_on_terminate"),
 };
 
 

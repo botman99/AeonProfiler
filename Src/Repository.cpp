@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2015-2018 Jeffrey "botman" Broome
+//
 
 #include <stdio.h>
 #include <assert.h>

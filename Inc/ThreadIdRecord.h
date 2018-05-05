@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2015-2018 Jeffrey "botman" Broome
+//
 
 #pragma once
 
@@ -118,13 +121,16 @@ public:
 	CHash<CCallTreeRecord> CallTreeHashTable;
 
 	DWORD ThreadId;
+	const void* CallerAddress;
+
 	char* SymbolName;
 
-	CThreadIdRecord(DWORD InThreadId) :
+	CThreadIdRecord(DWORD InThreadId, const void* InCallerAddress) :
 		ThreadIdRecordAllocator(false),
 		CallStack(&ThreadIdRecordAllocator),
 		CallTreeHashTable(&ThreadIdRecordAllocator, CALLRECORD_HASH_TABLE_SIZE, false),
-		ThreadId( InThreadId )
+		ThreadId( InThreadId ),
+		CallerAddress( InCallerAddress )
 	{
 		InitializeCriticalSection(&ThreadIdCriticalSection);
 		SetCriticalSectionSpinCount(&ThreadIdCriticalSection, 4000);  // 4000 is what the Windows heap manager uses (https://msdn.microsoft.com/en-us/library/windows/desktop/ms686197%28v=vs.85%29.aspx)
@@ -194,7 +200,7 @@ public:
 		pRec->CallTreeArray = nullptr;
 		pRec->CallTreeArraySize = 0;
 
-		pRec->Address = nullptr;
+		pRec->Address = CallerAddress;
 
 		pRec->ThreadId = ThreadId;
 		pRec->SymbolName = SymbolName;
@@ -202,11 +208,6 @@ public:
 		if( CallStack.pTop )  // copy the thread's Stack
 		{
 			pRec->StackArray = CallStack.CopyStackToArray(InCopyAllocator, pRec->StackArraySize);
-			assert(pRec->StackArraySize > 0);
-			if( pRec->StackArraySize > 0 )
-			{
-				pRec->Address = pRec->StackArray[pRec->StackArraySize-1].CallerAddress;
-			}
 		}
 
 		pRec->CallTreeArray = CallTreeHashTable.CopyHashToArray(InCopyAllocator, pRec->CallTreeArraySize, true);

@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2015-2018 Jeffrey "botman" Broome
+//
 
 #include "targetver.h"
 #include "resource.h"
@@ -182,10 +185,9 @@ void WINAPI ProcessCallTreeDataThread(LPVOID lpData)
 			if( StackRec.CurrentCallTreeRecord )
 			{
 				// initialize any uninitialized symbol names...
-				char* sym = StackRec.CurrentCallTreeRecord->SymbolName;
-				if( sym == nullptr )
+				if( StackRec.CurrentCallTreeRecord->SymbolName == nullptr )
 				{
-					sym = LookupAddressSymbolName((DWORD64)StackRec.CurrentCallTreeRecord->Address);
+					char* sym = LookupAddressSymbolName((DWORD64)StackRec.CurrentCallTreeRecord->Address);
 					if( sym )
 					{
 						size_t length = strlen(sym);
@@ -250,10 +252,9 @@ void WINAPI ProcessCallTreeDataThread(LPVOID lpData)
 				DialogCallTreeRecord_t* CallTreeRec = (DialogCallTreeRecord_t*)ThreadRec->CallTreeArray[CallRecordIndex];
 
 				// initialize any uninitialized symbol names...
-				char* sym = CallTreeRec->SymbolName;
-				if( sym == nullptr )
+				if( CallTreeRec->SymbolName == nullptr )
 				{
-					sym = LookupAddressSymbolName((DWORD64)CallTreeRec->Address);
+					char* sym = LookupAddressSymbolName((DWORD64)CallTreeRec->Address);
 					if( sym )
 					{
 						size_t length = strlen(sym);

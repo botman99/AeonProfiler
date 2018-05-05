@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2015-2018 Jeffrey "botman" Broome
+//
 
 // Include this header file in the application that you wish to profile and copy the
 // AeonProfiler.lib or AeonProfiler64.lib to a folder containing your libraries then

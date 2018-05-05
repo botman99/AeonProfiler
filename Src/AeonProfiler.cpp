@@ -1,3 +1,6 @@
+//
+// Copyright (c) 2015-2018 Jeffrey "botman" Broome
+//
 
 // Windows Header Files:
 #include <Windows.h>
@@ -56,7 +59,7 @@ void CallerEnter(CallerData_t& Call)
 
 	// look up the thread id record
 	__int64 pTemp = (__int64)Call.ThreadId;  // cast the DWORD ThreadId to a 64 bit value so we can safely cast that to a void pointer
-	CThreadIdRecord* pThreadIdRec = ThreadIdHashTable->EmplaceIfNecessary((void*)pTemp, Call.ThreadId).second;
+	CThreadIdRecord* pThreadIdRec = ThreadIdHashTable->EmplaceIfNecessary((void*)pTemp, Call.ThreadId, Call.CallerAddress).second;
 	assert(pThreadIdRec);
 
 	EnterCriticalSection(&pThreadIdRec->ThreadIdCriticalSection);
@@ -82,6 +85,17 @@ void CallerEnter(CallerData_t& Call)
 	CurrentCallerData.Counter = Call.Counter;
 	CurrentCallerData.CallerAddress = Call.CallerAddress;
 	CurrentCallerData.CurrentCallTreeRecord = pCallTreeRec;
+
+	// This dirty hack is to set the "proper" caller address for the bottommost function on the stack.  When the application starts the first thread
+	// created will be for 'main' or 'WinMain' but mainCRTStartup or WinMainCRTStartup will call global ctors (global static constructors) before
+	// calling 'main' or 'WinMain' and we don't want the main threead to use the symbol name of the global ctor, so when we detect that the main
+	// thread's CallerAddress has changed, we update it with the most recent one (which should never change again once 'main' or 'WinMain' is called
+	// unless you have a global ctor with a destructor that run's code after 'main' or 'WinMain' has exited).  Of course, this is all under the
+	// assumption that you have /Gh /GH set for your application's 'main' or 'WinMain' function.  :)
+	if( (pThreadIdRec->CallStack.StackSize == 0) && pThreadIdRec->CallerAddress != Call.CallerAddress )  // stack is empty and caller address has changed?
+	{
+		pThreadIdRec->CallerAddress = Call.CallerAddress;
+	}
 
 	int registers[4];
 	__cpuid(registers, 0);  // slower but more accurate across multiple threads running on different cores
