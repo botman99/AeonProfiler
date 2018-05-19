@@ -8,6 +8,7 @@
 // Windows Header Files:
 #include <Windows.h>
 #include <Commctrl.h>
+#include <Shlwapi.h>
 
 #pragma warning( push )
 #pragma warning( disable : 4091 )
@@ -459,8 +460,20 @@ void DisplayCallTreeData()
 		wSymbolName[num_chars] = 0;
 
 		extern TCHAR szTitle[MAX_LOADSTRING];
+		extern WCHAR SaveLoadFilename[MAX_PATH];
 
+		if( SaveLoadFilename[0] && AeonWinExitPointer )
+		{
+			WCHAR Filename[MAX_PATH];
+			wcscpy_s(Filename, SaveLoadFilename);
+			PathStripPath(Filename);
+
+			swprintf(buffer, buffer_len, TEXT("%s - %s (ThreadId = %d) - %s"), szTitle, wSymbolName, ListView_ThreadIdRecord->ThreadId, Filename);
+		}
+		else
+		{
 		swprintf(buffer, buffer_len, TEXT("%s - %s (ThreadId = %d)"), szTitle, wSymbolName, ListView_ThreadIdRecord->ThreadId);
+		}
 
 		SetWindowText(ghWnd, buffer);
 

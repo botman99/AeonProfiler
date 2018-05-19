@@ -26,7 +26,7 @@
 #define WM_QSORT_DONE				(WM_USER+8)  /* notify the chiild window when a qsort is done */
 #define WM_DISPLAYCALLTREEDATA_QSORT_DONE (WM_USER+9)  /* notify the parent window that the qsort is done */
 
-#define MAX_LOADSTRING 100
+#define MAX_LOADSTRING MAX_PATH + 64
 
 enum SortType
 {

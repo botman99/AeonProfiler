@@ -124,6 +124,8 @@ void WINAPI DialogThread(LPVOID lpData)
 
 	ghWnd = top_splitter->m_hwnd_Splitter;
 
+	SaveLoadFilename[0] = 0;
+
 	hAccelTable = LoadAccelerators(hInst, MAKEINTRESOURCE(IDC_AEON_PROFILER));
 
 	InitializeSymbolLookup();
